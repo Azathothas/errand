@@ -153,6 +153,8 @@ pub struct UsageSource<R> {
     pub provider: String,
     /// The gate that holds the window's answer.
     pub gate: QuotaGate<R>,
+    /// Whether a spent window refuses a session, rather than only showing.
+    pub spent_refuses: bool,
 }
 
 /// What a thread is told when a window is spent.

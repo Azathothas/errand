@@ -287,6 +287,21 @@ async fn read_usage(
     rows
 }
 
+/// Why a session on `provider` cannot start, or nothing when it can.
+///
+/// A provider whose spent window does not refuse is not asked at all: it bills
+/// past the window to a credit balance, so the window says nothing about
+/// whether the turn will be served.
+async fn refusal(sources: &mut [UsageSource<BoxedGateRead>], provider: &str) -> Option<String> {
+    let source = sources
+        .iter_mut()
+        .find(|candidate| candidate.provider == provider && candidate.spent_refuses)?;
+    let window = source.gate.current().await;
+    window
+        .filter(is_spent)
+        .map(|window| spent_message(provider, when(window.resets_at, when_relative).as_deref()))
+}
+
 /// Every provider on this host whose window can be asked about.
 ///
 /// A z.ai provider is asked at z.ai's quota endpoint, whether or not it is the
@@ -305,6 +320,7 @@ fn usage_sources(config: &Config) -> Vec<UsageSource<BoxedGateRead>> {
             continue;
         };
         let credential = credential.to_owned();
+        let spent_refuses = shape.spent_refuses();
         let base_url = definition
             .get("baseUrl")
             .and_then(serde_json::Value::as_str)
@@ -328,6 +344,7 @@ fn usage_sources(config: &Config) -> Vec<UsageSource<BoxedGateRead>> {
         sources.push(UsageSource {
             provider: name.clone(),
             gate: QuotaGate::new(read, now_ms),
+            spent_refuses,
         });
     }
     sources.sort_by_key(|source| source.provider != config.agent.provider);
@@ -1071,16 +1088,7 @@ async fn run(
         Some(Arc::new(move |provider: &str| {
             let sources = Arc::clone(&sources);
             let provider = provider.to_owned();
-            Box::pin(async move {
-                let mut sources = sources.lock().await;
-                let source = sources
-                    .iter_mut()
-                    .find(|candidate| candidate.provider == provider)?;
-                let window = source.gate.current().await;
-                window.filter(is_spent).map(|window| {
-                    spent_message(&provider, when(window.resets_at, when_relative).as_deref())
-                })
-            })
+            Box::pin(async move { refusal(&mut sources.lock().await, &provider).await })
         }))
     };
 
