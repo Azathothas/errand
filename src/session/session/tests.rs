@@ -1438,6 +1438,28 @@ async fn stopping_ends_the_session_once_and_tears_the_sandbox_down() {
     .await;
 }
 
+/// An ended session lets go of its agent. Its task held a sender to its own
+/// channel, so it waited forever and kept the agent's pipes and buffers, one
+/// set for every session the daemon ever ran.
+#[tokio::test]
+async fn an_ended_session_lets_go_of_its_agent() {
+    with_session(SessionTestCase::default(), |harness| {
+        Box::pin(async move {
+            harness.session.stop(EndReason::Stopped).await;
+            settle().await;
+
+            assert!(harness.session.commands.is_closed(), "the task is gone");
+            let agents = harness.sandbox.agents.lock().unwrap();
+            assert_eq!(
+                Arc::strong_count(&agents[0].0),
+                2,
+                "only the fake sandbox still holds the agent"
+            );
+        })
+    })
+    .await;
+}
+
 #[tokio::test]
 async fn a_session_that_hears_nothing_for_long_enough_ends_itself() {
     with_session(SessionTestCase::default(), |harness| {

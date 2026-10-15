@@ -774,7 +774,8 @@ impl Running {
         }
     }
 
-    /// The session's whole life: take one command at a time, in order.
+    /// The session's whole life: take one command at a time, in order, until
+    /// it has ended.
     ///
     /// One arm per signal keeps the dispatch readable; the bodies they call
     /// are the small methods below.
@@ -956,6 +957,13 @@ impl Running {
                 }
                 Signal::Exit { code } => self.on_exit(code).await,
                 Signal::DelegationReported(reported) => self.note_delegation(reported).await,
+            }
+            // The channel never closes on its own: this task, its timers, and
+            // its agent's handlers all hold senders into it. Waiting for that
+            // would keep an ended session, its agent's pipes included, for the
+            // life of the daemon. Callers read a closed channel as ended.
+            if self.ended {
+                break;
             }
         }
     }
