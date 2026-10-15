@@ -177,8 +177,10 @@ pub struct AgentConfig {
     /// `resets` and `resetsAs` (`iso`, `ms`, or `s`). Several windows go under
     /// `windows`, the one to show first: a missing or stale one gives way to
     /// the next, and a spent one outranks them all. A path may pick a list
-    /// entry by a field, as `windows[id=5h].usedPercent`. A provider without
-    /// `usage` is not metered, whatever it is called.
+    /// entry by a field, as `windows[id=5h].usedPercent`. `spentRefuses:
+    /// false` is for a plan that bills past a spent window to a credit
+    /// balance: the window still shows, but no longer refuses a session. A
+    /// provider without `usage` is not metered, whatever it is called.
     ///
     /// A `defaultThinkingLevel` on a provider says how hard its models think
     /// when nobody says, and one on an entry of `models` says it for that

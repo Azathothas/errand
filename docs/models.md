@@ -126,6 +126,24 @@ reset, gives way to the next. A spent window outranks them all: a spent
 weekly allowance leaves nothing for the five hour window to give, so the
 provider reads as spent until the last spent window resets.
 
+Some plans keep serving once a window is spent and bill the rest to the
+account's credit balance, as OpenCode Go does. `"spentRefuses": false` on such
+a provider's `usage` keeps its windows in `!usage` and the bot's status, so the
+spend stays in sight, while a session starts whatever they say:
+
+```json
+"usage": {
+  "path": "/zen/go/v1/usage",
+  "spentRefuses": false,
+  "windows": [
+    { "percent": "usage.rolling.percent", "percentIs": "used",
+      "resets": "usage.rolling.resetsAt", "resetsAs": "iso" },
+    { "percent": "usage.monthly.percent", "percentIs": "used",
+      "resets": "usage.monthly.resetsAt", "resetsAs": "iso" }
+  ]
+}
+```
+
 ### When a window is spent
 
 A session asked for while its provider's window is spent can start somewhere

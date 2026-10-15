@@ -10,7 +10,7 @@ use serenity::model::id::ChannelId;
 
 use super::{
     BoxedGateRead, answer_in, brokerable_providers, brokering_credential_names, read_usage,
-    rebuild_catalog, usage_sources,
+    rebuild_catalog, refusal, usage_sources,
 };
 use crate::config::validate::validate_config;
 use crate::log::{LogFields, Logger};
@@ -272,6 +272,7 @@ fn counted_source(
     UsageSource {
         provider: provider.to_owned(),
         gate: QuotaGate::new(read, || 1_000),
+        spent_refuses: true,
     }
 }
 
@@ -334,10 +335,34 @@ async fn a_provider_that_answers_nothing_is_reported_as_nothing() {
     let mut sources = vec![UsageSource {
         provider: "quiet".to_owned(),
         gate: QuotaGate::new(read, || 1_000),
+        spent_refuses: true,
     }];
 
     let rows = read_usage(&mut sources, true).await;
     assert_eq!(rows, vec![("quiet".to_owned(), None)]);
+}
+
+/// A spent window refuses a session, unless its provider says it bills past
+/// the window, in which case the session starts while `!usage` still reads
+/// the window as spent.
+#[tokio::test]
+async fn a_spent_window_refuses_only_where_the_provider_says_it_does() {
+    let reads = Arc::new(AtomicI64::new(0));
+    let billed = UsageSource {
+        spent_refuses: false,
+        ..counted_source("billed", 100.0, Arc::clone(&reads))
+    };
+    let mut sources = vec![counted_source("capped", 100.0, Arc::clone(&reads)), billed];
+
+    assert!(refusal(&mut sources, "capped").await.is_some());
+    assert_eq!(refusal(&mut sources, "billed").await, None);
+    assert_eq!(refusal(&mut sources, "unmetered").await, None);
+
+    let rows = read_usage(&mut sources, false).await;
+    assert_eq!(
+        rows[1].1.as_ref().map(|quota| quota.percentage),
+        Some(100.0)
+    );
 }
 
 /// The list a provider serves is what `!model` reads, and it is derived from

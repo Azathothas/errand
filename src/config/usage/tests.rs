@@ -37,6 +37,7 @@ fn a_mapping_says_where_the_numbers_are() {
         Ok(Some(UsageShape::Mapped(MappedUsage {
             path: "/v1/usage".to_owned(),
             bearer: false,
+            spent_refuses: true,
             windows: vec![MappedWindow {
                 percent: "limiting.remainingPercent".to_owned(),
                 percent_is_left: true,
@@ -67,6 +68,28 @@ fn several_windows_are_read_in_the_order_written() {
         mapped.windows[1].resets,
         Some(("windows[id=1w].at".to_owned(), ResetFormat::Millis))
     );
+}
+
+/// A plan that bills past a spent window says so, and only as a yes or no.
+#[test]
+fn a_mapping_may_say_a_spent_window_does_not_refuse() {
+    let read = |spent_refuses: serde_json::Value| {
+        UsageShape::of(
+            "p",
+            &json!({ "usage": {
+                "percent": "left",
+                "percentIs": "left",
+                "spentRefuses": spent_refuses,
+            } }),
+        )
+    };
+
+    assert_eq!(
+        read(json!(false)).map(|shape| shape.map(|shape| shape.spent_refuses())),
+        Ok(Some(false))
+    );
+    assert!(read(json!("no")).is_err());
+    assert!(UsageShape::Gateway.spent_refuses());
 }
 
 /// A window's fields belong in the window, and a path that cannot be read is

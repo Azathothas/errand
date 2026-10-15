@@ -21,6 +21,7 @@ fn gateway() -> MappedUsage {
     MappedUsage {
         path: "/usage".to_owned(),
         bearer: true,
+        spent_refuses: true,
         windows: vec![window("window-share:300m"), window("window-share:1w")],
     }
 }
@@ -84,6 +85,7 @@ fn what_is_left_is_turned_into_what_is_used_in_the_unit_it_is_written() {
     let mapped = |resets: (&str, ResetFormat)| MappedUsage {
         path: "/usage".to_owned(),
         bearer: false,
+        spent_refuses: true,
         windows: vec![MappedWindow {
             percent: "limiting.left".to_owned(),
             percent_is_left: true,

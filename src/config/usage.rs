@@ -26,6 +26,10 @@ pub struct MappedUsage {
     pub path: String,
     /// Whether the key is sent as `Bearer <key>` or as the key alone.
     pub bearer: bool,
+    /// Whether a spent window refuses a session. A plan that bills past a
+    /// spent window to a credit balance keeps serving, so its window is shown
+    /// but does not stop work.
+    pub spent_refuses: bool,
     /// The windows to read, the one to show first. The next is shown when
     /// one is missing or already past its reset, and a spent one is shown
     /// over them all, since it is what stops work.
@@ -55,6 +59,15 @@ pub enum ResetFormat {
 }
 
 impl UsageShape {
+    /// Whether a spent window refuses a session. Only a mapping can say it
+    /// does not.
+    pub fn spent_refuses(&self) -> bool {
+        match self {
+            Self::Zai | Self::Gateway => true,
+            Self::Mapped(mapping) => mapping.spent_refuses,
+        }
+    }
+
     /// Reads a provider definition's `usage`, or nothing when it has none.
     ///
     /// Refuses with every problem it finds, named for the provider, rather
@@ -83,12 +96,13 @@ impl UsageShape {
                 "percentIs",
                 "resets",
                 "resetsAs",
+                "spentRefuses",
             ]
             .contains(&key.as_str())
             {
                 problems.push(format!(
                     "{place}.{key} is not something usage takes; use path, auth, windows, \
-                     percent, percentIs, resets, or resetsAs"
+                     percent, percentIs, resets, resetsAs, or spentRefuses"
                 ));
             }
         }
@@ -106,6 +120,8 @@ impl UsageShape {
                 true
             }
         };
+
+        let spent_refuses = flag(written, "spentRefuses", true, &place, &mut problems);
 
         let windows = match written.get("windows") {
             None => window(written, &place, &mut problems).into_iter().collect(),
@@ -151,6 +167,7 @@ impl UsageShape {
             Ok(Some(Self::Mapped(MappedUsage {
                 path,
                 bearer,
+                spent_refuses,
                 windows,
             })))
         } else {
@@ -218,6 +235,24 @@ fn window(
         percent_is_left,
         resets,
     })
+}
+
+/// A setting that must be true or false, or `default` when it is not there.
+fn flag(
+    written: &Map<String, Value>,
+    key: &str,
+    default: bool,
+    place: &str,
+    problems: &mut Vec<String>,
+) -> bool {
+    match written.get(key) {
+        None => default,
+        Some(Value::Bool(value)) => *value,
+        Some(_) => {
+            problems.push(format!("{place}.{key} must be true or false"));
+            default
+        }
+    }
 }
 
 /// A setting that must be text, when it is there at all.
