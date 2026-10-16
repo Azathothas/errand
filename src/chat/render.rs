@@ -270,7 +270,24 @@ pub fn usage_summary(usage: &Usage) -> String {
     if usage.cost > 0.0 {
         parts.push(format!("${:.4}", usage.cost));
     }
+    if let Some(rate) = usage.output_rate {
+        parts.push(format!("{rate:.0} tok/s"));
+    }
     parts.join(", ")
+}
+
+/// Output tokens per second over `elapsed_ms`, or nothing when either is
+/// missing.
+///
+/// Measured from the prompt to the turn's end, so the wait for the first
+/// token and time spent running tools count too, and a tool heavy turn reads
+/// slower than the model streams.
+pub fn output_rate(output: u64, elapsed_ms: i64) -> Option<f64> {
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "a turn's token count and length are far below f64's exact range"
+    )]
+    (output > 0 && elapsed_ms > 0).then(|| output as f64 * 1_000.0 / elapsed_ms as f64)
 }
 
 /// Which model answered, what the turn took, and what it spent.
@@ -314,6 +331,8 @@ pub struct Usage {
     pub context_tokens: f64,
     /// How much the model holds before it is compacted.
     pub context_window: f64,
+    /// The turn's output tokens per second, when that can be told.
+    pub output_rate: Option<f64>,
 }
 
 /// Suffixes, smallest first, each a thousand times the one before.

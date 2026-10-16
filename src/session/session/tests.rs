@@ -3462,6 +3462,7 @@ async fn the_done_line_shows_the_latest_totals_and_what_was_cached() {
                 "sessionUpdate": "agent_message_chunk",
                 "content": { "type": "text", "text": "did it" },
             }));
+            settle().await;
             for (cache_read, cost) in [(300, 0.01), (700, 0.02)] {
                 controls.update(&json!({
                     "sessionUpdate": "usage_update",
@@ -3483,6 +3484,7 @@ async fn the_done_line_shows_the_latest_totals_and_what_was_cached() {
                 .0;
             assert!(done.contains("1.0k tokens, 88% cached"), "got {done}");
             assert!(done.contains("$0.0200"), "got {done}");
+            assert!(done.contains("tok/s"), "got {done}");
         })
     })
     .await;

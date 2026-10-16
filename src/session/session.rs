@@ -659,6 +659,9 @@ struct Running {
     /// reported on its own: it is the part a person in a thread feels, and it
     /// is not the same number as how long the whole turn took.
     turn_first_output_at: Option<i64>,
+    /// Output tokens the session had produced when this turn opened, so the
+    /// turn's own share can be told apart from the running total.
+    turn_output_from: u64,
     idle_timer: Option<u64>,
     disk_timer: Option<u64>,
     delegating_timer: Option<u64>,
@@ -757,6 +760,7 @@ impl Running {
             current_author_id: None,
             turn_started_at: None,
             turn_first_output_at: None,
+            turn_output_from: 0,
             idle_timer: None,
             disk_timer: None,
             delegating_timer: None,
@@ -1501,6 +1505,7 @@ impl Running {
         self.current_author_id = Some(message.author_id.clone());
         self.turn_started_at = Some(now_ms());
         self.turn_first_output_at = None;
+        self.turn_output_from = self.usage.output;
         self.views.send(SessionEvent::Waiting { text: None }).await;
         self.views.send(SessionEvent::Busy { busy: true }).await;
         let content = match self.pull_request_outcome.take() {
@@ -1773,6 +1778,12 @@ impl Running {
                 .usage
                 .context_window
                 .map_or(0.0, |window| window as f64),
+            output_rate: self.turn_started_at.and_then(|started| {
+                crate::chat::render::output_rate(
+                    self.usage.output.saturating_sub(self.turn_output_from),
+                    now_ms() - started,
+                )
+            }),
         })
     }
 

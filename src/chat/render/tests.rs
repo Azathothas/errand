@@ -4,8 +4,8 @@ use serde_json::json;
 
 use super::{
     MAX_LISTED_ENTRIES, MESSAGE_LIMIT, THREAD_NAME_LIMIT, Usage, bytes, compaction_line,
-    dialog_lines, directory_listing, duration, file_view, split_message, thread_name, tokens,
-    tool_line, truncate, turn_summary, turn_timing, usage_summary, usage_table,
+    dialog_lines, directory_listing, duration, file_view, output_rate, split_message, thread_name,
+    tokens, tool_line, truncate, turn_summary, turn_timing, usage_summary, usage_table,
     when_relative_plain,
 };
 use crate::agent::protocol::{DialogMethod, DialogRequest};
@@ -187,16 +187,24 @@ fn counts_the_agent_did_not_report_are_left_out() {
 
 /// Cache writes are prompt tokens too, so they count toward what was sent.
 #[test]
-fn the_cached_share_is_of_every_prompt_token() {
+fn the_cached_share_is_of_every_prompt_token_and_speed_comes_last() {
     let line = usage_summary(&Usage {
         input: 100.0,
         cache_read: 600.0,
         cache_write: 300.0,
         total_tokens: 1_000.0,
+        output_rate: Some(41.6),
         ..Usage::default()
     });
 
-    assert_eq!(line, "1.0k tokens, 60% cached");
+    assert_eq!(line, "1.0k tokens, 60% cached, 42 tok/s");
+}
+
+#[test]
+fn speed_needs_both_tokens_and_time() {
+    assert_eq!(output_rate(500, 10_000), Some(50.0));
+    assert_eq!(output_rate(0, 10_000), None);
+    assert_eq!(output_rate(500, 0), None);
 }
 
 /// Without the share, a number of tokens says nothing about how much is left.
