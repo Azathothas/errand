@@ -237,20 +237,20 @@ pub fn tool_line(tool_name: &str, target: Option<&str>) -> String {
 /// What a session has cost, in one short line.
 ///
 /// Cached input is reported as a share of everything sent, because that is the
-/// number worth watching: it is what keeps a long session affordable.
+/// number worth watching: it is what keeps a long session affordable. Counts
+/// the agent did not report are left out rather than shown as zero, since a
+/// zero reads as a real figure.
 pub fn usage_summary(usage: &Usage) -> String {
-    let sent = usage.input + usage.cache_read;
-    #[expect(clippy::cast_possible_truncation)]
-    let cached = if sent == 0.0 {
-        0
-    } else {
-        ((usage.cache_read / sent) * 100.0).round() as i64
-    };
-
-    let mut parts = vec![
-        format!("{} tokens", tokens(usage.total_tokens)),
-        format!("{cached}% cached"),
-    ];
+    let mut parts = Vec::new();
+    if usage.total_tokens > 0.0 {
+        parts.push(format!("{} tokens", tokens(usage.total_tokens)));
+    }
+    let sent = usage.input + usage.cache_read + usage.cache_write;
+    if sent > 0.0 {
+        #[expect(clippy::cast_possible_truncation)]
+        let cached = ((usage.cache_read / sent) * 100.0).round() as i64;
+        parts.push(format!("{cached}% cached"));
+    }
 
     // What the conversation is carrying now, as opposed to what it has spent
     // in total. The share is the useful part: it says how much room is left.
@@ -304,9 +304,11 @@ pub struct Usage {
     pub input: f64,
     /// Input tokens served from the provider's cache.
     pub cache_read: f64,
-    /// Everything the turn charged.
+    /// Input tokens written to the provider's cache.
+    pub cache_write: f64,
+    /// Everything the session charged.
     pub total_tokens: f64,
-    /// What the turn cost, when the provider prices it.
+    /// What the session cost, when the provider prices it.
     pub cost: f64,
     /// What the conversation is carrying now.
     pub context_tokens: f64,

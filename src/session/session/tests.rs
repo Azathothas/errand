@@ -3449,6 +3449,45 @@ async fn the_thread_is_told_which_model_it_is_talking_to() {
     .await;
 }
 
+/// The agent reports the session's running totals after every request. Adding
+/// them up counted each earlier request again, and the counts it splits out
+/// were never read, so the done line said 0% cached.
+#[tokio::test]
+async fn the_done_line_shows_the_latest_totals_and_what_was_cached() {
+    with_session(SessionTestCase::default(), |harness| {
+        Box::pin(async move {
+            let controls = harness.controls();
+            controls.turn_start();
+            controls.update(&json!({
+                "sessionUpdate": "agent_message_chunk",
+                "content": { "type": "text", "text": "did it" },
+            }));
+            for (cache_read, cost) in [(300, 0.01), (700, 0.02)] {
+                controls.update(&json!({
+                    "sessionUpdate": "usage_update",
+                    "used": 1_000, "size": 200_000, "cost": { "amount": cost },
+                    "_meta": { "kage": {
+                        "input": 100, "output": 200, "cacheRead": cache_read, "cacheWrite": 0,
+                    } },
+                }));
+            }
+            controls.turn_end();
+            settle().await;
+
+            let done = harness
+                .thread
+                .notices()
+                .into_iter()
+                .find(|(_, level)| *level == NoticeLevel::Done)
+                .expect("the turn ends")
+                .0;
+            assert!(done.contains("1.0k tokens, 88% cached"), "got {done}");
+            assert!(done.contains("$0.0200"), "got {done}");
+        })
+    })
+    .await;
+}
+
 /// A reqwest error displays only its outermost layer, so the reason a fetch
 /// failed sits unread in its source chain. `chained` joins the whole chain,
 /// which is the difference between "error sending request" and knowing it was

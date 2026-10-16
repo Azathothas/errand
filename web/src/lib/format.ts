@@ -70,7 +70,11 @@ export function money(amount: number): string {
  * Returns undefined when nothing has been sent, because zero percent of
  * nothing is a made up number.
  */
-export function cacheRate(input: number, cacheRead: number): number | undefined {
-  const sent = input + cacheRead;
+export function cacheRate(
+  input: number,
+  cacheRead: number,
+  cacheWrite: number,
+): number | undefined {
+  const sent = input + cacheRead + cacheWrite;
   return sent === 0 ? undefined : Math.round((cacheRead / sent) * 100);
 }

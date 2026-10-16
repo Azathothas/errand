@@ -532,7 +532,10 @@ pub fn tool_target(args: Option<&Value>) -> Option<String> {
     None
 }
 
-/// What a turn cost, as the agent reports it.
+/// What a session has spent so far, as the agent last reported it.
+///
+/// Every figure is the session's running total rather than one request's
+/// share, so a later report replaces an earlier one instead of adding to it.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Usage {
     /// Input tokens charged uncached.
@@ -543,9 +546,11 @@ pub struct Usage {
     pub cache_read: f64,
     /// Input tokens written to the provider's cache.
     pub cache_write: f64,
-    /// Everything the turn charged.
+    /// Everything charged, or zero where the agent does not split it.
     pub total_tokens: f64,
-    /// What the turn cost.
+    /// Tokens the conversation carries now.
+    pub context: f64,
+    /// What the session has cost.
     pub cost: f64,
     /// The model that charged it, when the agent named it.
     pub model: Option<String>,
@@ -553,9 +558,10 @@ pub struct Usage {
 
 /// Reads usage off a `usage_update` body, when it carries any.
 ///
-/// The update reports context fill rather than per-kind tokens, so the fill
-/// lands on input and the total: the usage line renders what was charged out
-/// of what the window holds, which is what those two numbers say.
+/// `used` is how full the context is, not what was charged. The charged
+/// tokens ride under `_meta.kage`, split the way providers bill them, and an
+/// agent that does not send them leaves every count at zero rather than
+/// passing the context fill off as spend.
 pub fn usage_of(record: &Value) -> Option<Usage> {
     let used = record.get("used")?.as_f64()?;
     let cost = record
@@ -563,12 +569,26 @@ pub fn usage_of(record: &Value) -> Option<Usage> {
         .and_then(|cost| cost.get("amount"))
         .and_then(Value::as_f64)
         .unwrap_or(0.0);
+    let totals = record.get("_meta").and_then(|meta| meta.get("kage"));
+    let count = |key: &str| {
+        totals
+            .and_then(|totals| totals.get(key))
+            .and_then(Value::as_f64)
+            .unwrap_or(0.0)
+    };
+    let (input, output, cache_read, cache_write) = (
+        count("input"),
+        count("output"),
+        count("cacheRead"),
+        count("cacheWrite"),
+    );
     Some(Usage {
-        input: used,
-        output: 0.0,
-        cache_read: 0.0,
-        cache_write: 0.0,
-        total_tokens: used,
+        input,
+        output,
+        cache_read,
+        cache_write,
+        total_tokens: input + output + cache_read + cache_write,
+        context: used,
         cost,
         model: None,
     })

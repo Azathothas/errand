@@ -18,13 +18,30 @@ fn usage_is_read_off_an_update_with_cost_beside_it() {
         "used": 900,
         "size": 200_000,
         "cost": { "amount": 0.02, "currency": "USD" },
+        "_meta": { "kage": { "input": 120, "output": 40, "cacheRead": 700, "cacheWrite": 80 } },
     }))
     .expect("usage");
 
-    assert_eq!(usage.input, 900.0);
-    assert_eq!(usage.total_tokens, 900.0);
+    assert_eq!(usage.context, 900.0);
+    assert_eq!(usage.cache_read, 700.0);
+    assert_eq!(usage.total_tokens, 940.0);
     assert_eq!(usage.cost, 0.02);
-    assert_eq!(usage.output, 0.0);
+}
+
+/// An agent that reports only how full the context is has not said what was
+/// charged, and the fill must not be read as spend.
+#[expect(
+    clippy::float_cmp,
+    reason = "the fixtures hold values a f64 holds exactly"
+)]
+#[test]
+fn an_update_without_kage_totals_charges_nothing() {
+    let usage = usage_of(&json!({ "sessionUpdate": "usage_update", "used": 900, "size": 10 }))
+        .expect("usage");
+
+    assert_eq!(usage.context, 900.0);
+    assert_eq!(usage.total_tokens, 0.0);
+    assert_eq!(usage.input, 0.0);
 }
 
 #[test]

@@ -165,11 +165,38 @@ fn usage_says_what_a_session_cost_in_terms_a_reader_can_act_on() {
         cost: 0.41,
         context_tokens: 118_000.0,
         context_window: 1_000_000.0,
+        ..Usage::default()
     });
 
     assert!(line.contains("264k tokens"));
     assert!(line.contains("47% cached"));
     assert!(line.contains("$0.41"));
+}
+
+/// An agent that does not split what it charged has not said that nothing
+/// was cached, and a zero would read as though it had.
+#[test]
+fn counts_the_agent_did_not_report_are_left_out() {
+    let line = usage_summary(&Usage {
+        context_tokens: 500.0,
+        ..Usage::default()
+    });
+
+    assert_eq!(line, "500 context");
+}
+
+/// Cache writes are prompt tokens too, so they count toward what was sent.
+#[test]
+fn the_cached_share_is_of_every_prompt_token() {
+    let line = usage_summary(&Usage {
+        input: 100.0,
+        cache_read: 600.0,
+        cache_write: 300.0,
+        total_tokens: 1_000.0,
+        ..Usage::default()
+    });
+
+    assert_eq!(line, "1.0k tokens, 60% cached");
 }
 
 /// Without the share, a number of tokens says nothing about how much is left.
@@ -182,6 +209,7 @@ fn context_is_reported_as_a_share_of_what_the_model_holds() {
         cost: 0.0,
         context_tokens: 500_000.0,
         context_window: 1_000_000.0,
+        ..Usage::default()
     });
 
     assert!(line.contains("50%"));
@@ -440,6 +468,7 @@ fn a_turn_summary_groups_what_it_answers() {
         cost: 0.000_3,
         context_tokens: 3_300.0,
         context_window: 1_000_000.0,
+        ..Usage::default()
     };
 
     assert_eq!(
