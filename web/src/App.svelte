@@ -511,11 +511,11 @@
             )}
           </span>
         {/if}
-        {#if usage !== null && usage.turns > 0}
+        {#if usage !== null && usage.totalTokens > 0}
           <span title="{tokens(usage.totalTokens)} tokens">
-            {tokens(usage.totalTokens)} tokens{cacheRate(usage.input, usage.cacheRead) === undefined
+            {tokens(usage.totalTokens)} tokens{cacheRate(usage.input, usage.cacheRead, usage.cacheWrite) === undefined
               ? ""
-              : `, ${cacheRate(usage.input, usage.cacheRead)}% cached`}
+              : `, ${cacheRate(usage.input, usage.cacheRead, usage.cacheWrite)}% cached`}
           </span>
         {/if}
         {#if current !== undefined}

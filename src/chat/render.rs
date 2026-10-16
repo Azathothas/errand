@@ -237,20 +237,20 @@ pub fn tool_line(tool_name: &str, target: Option<&str>) -> String {
 /// What a session has cost, in one short line.
 ///
 /// Cached input is reported as a share of everything sent, because that is the
-/// number worth watching: it is what keeps a long session affordable.
+/// number worth watching: it is what keeps a long session affordable. Counts
+/// the agent did not report are left out rather than shown as zero, since a
+/// zero reads as a real figure.
 pub fn usage_summary(usage: &Usage) -> String {
-    let sent = usage.input + usage.cache_read;
-    #[expect(clippy::cast_possible_truncation)]
-    let cached = if sent == 0.0 {
-        0
-    } else {
-        ((usage.cache_read / sent) * 100.0).round() as i64
-    };
-
-    let mut parts = vec![
-        format!("{} tokens", tokens(usage.total_tokens)),
-        format!("{cached}% cached"),
-    ];
+    let mut parts = Vec::new();
+    if usage.total_tokens > 0.0 {
+        parts.push(format!("{} tokens", tokens(usage.total_tokens)));
+    }
+    let sent = usage.input + usage.cache_read + usage.cache_write;
+    if sent > 0.0 {
+        #[expect(clippy::cast_possible_truncation)]
+        let cached = ((usage.cache_read / sent) * 100.0).round() as i64;
+        parts.push(format!("{cached}% cached"));
+    }
 
     // What the conversation is carrying now, as opposed to what it has spent
     // in total. The share is the useful part: it says how much room is left.
@@ -270,7 +270,24 @@ pub fn usage_summary(usage: &Usage) -> String {
     if usage.cost > 0.0 {
         parts.push(format!("${:.4}", usage.cost));
     }
+    if let Some(rate) = usage.output_rate {
+        parts.push(format!("{rate:.0} tok/s"));
+    }
     parts.join(", ")
+}
+
+/// Output tokens per second over `elapsed_ms`, or nothing when either is
+/// missing.
+///
+/// Measured from the prompt to the turn's end, so the wait for the first
+/// token and time spent running tools count too, and a tool heavy turn reads
+/// slower than the model streams.
+pub fn output_rate(output: u64, elapsed_ms: i64) -> Option<f64> {
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "a turn's token count and length are far below f64's exact range"
+    )]
+    (output > 0 && elapsed_ms > 0).then(|| output as f64 * 1_000.0 / elapsed_ms as f64)
 }
 
 /// Which model answered, what the turn took, and what it spent.
@@ -304,14 +321,18 @@ pub struct Usage {
     pub input: f64,
     /// Input tokens served from the provider's cache.
     pub cache_read: f64,
-    /// Everything the turn charged.
+    /// Input tokens written to the provider's cache.
+    pub cache_write: f64,
+    /// Everything the session charged.
     pub total_tokens: f64,
-    /// What the turn cost, when the provider prices it.
+    /// What the session cost, when the provider prices it.
     pub cost: f64,
     /// What the conversation is carrying now.
     pub context_tokens: f64,
     /// How much the model holds before it is compacted.
     pub context_window: f64,
+    /// The turn's output tokens per second, when that can be told.
+    pub output_rate: Option<f64>,
 }
 
 /// Suffixes, smallest first, each a thousand times the one before.

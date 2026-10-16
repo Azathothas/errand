@@ -659,6 +659,9 @@ struct Running {
     /// reported on its own: it is the part a person in a thread feels, and it
     /// is not the same number as how long the whole turn took.
     turn_first_output_at: Option<i64>,
+    /// Output tokens the session had produced when this turn opened, so the
+    /// turn's own share can be told apart from the running total.
+    turn_output_from: u64,
     idle_timer: Option<u64>,
     disk_timer: Option<u64>,
     delegating_timer: Option<u64>,
@@ -757,6 +760,7 @@ impl Running {
             current_author_id: None,
             turn_started_at: None,
             turn_first_output_at: None,
+            turn_output_from: 0,
             idle_timer: None,
             disk_timer: None,
             delegating_timer: None,
@@ -1501,6 +1505,7 @@ impl Running {
         self.current_author_id = Some(message.author_id.clone());
         self.turn_started_at = Some(now_ms());
         self.turn_first_output_at = None;
+        self.turn_output_from = self.usage.output;
         self.views.send(SessionEvent::Waiting { text: None }).await;
         self.views.send(SessionEvent::Busy { busy: true }).await;
         let content = match self.pull_request_outcome.take() {
@@ -1657,10 +1662,11 @@ impl Running {
         }
     }
 
-    /// Adds a turn's usage to the running total.
+    /// Takes in the agent's latest report of what the session has spent.
     ///
-    /// The agent reports each turn's own cost. Context is the latest turn's
-    /// input rather than a sum, because it is what the model is carrying now.
+    /// The agent reports running totals after every request, so each report
+    /// replaces the last. Adding them up counted every earlier request again
+    /// with each new one.
     #[expect(
         clippy::cast_possible_truncation,
         clippy::cast_sign_loss,
@@ -1673,13 +1679,13 @@ impl Running {
             .and_then(AgentClient::context_window)
             .map(|window| window as u64);
         let total = &mut self.usage;
-        total.input += usage.input as u64;
-        total.output += usage.output as u64;
-        total.cache_read += usage.cache_read as u64;
-        total.cache_write += usage.cache_write as u64;
-        total.total_tokens += usage.total_tokens as u64;
-        total.cost += usage.cost;
-        total.context_tokens = (usage.input + usage.cache_read) as u64;
+        total.input = usage.input as u64;
+        total.output = usage.output as u64;
+        total.cache_read = usage.cache_read as u64;
+        total.cache_write = usage.cache_write as u64;
+        total.total_tokens = usage.total_tokens as u64;
+        total.cost = usage.cost;
+        total.context_tokens = usage.context as u64;
         total.context_window = context_window.or(total.context_window);
         total.turns += 1;
         if let Some(model) = &usage.model {
@@ -1751,6 +1757,36 @@ impl Running {
         handlers
     }
 
+    /// What the session has spent, as the done line shows it, once the agent
+    /// has reported anything.
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "token totals sit far below f64's exact range"
+    )]
+    fn shown_usage(&self) -> Option<crate::chat::render::Usage> {
+        if self.usage.turns == 0 {
+            return None;
+        }
+        Some(crate::chat::render::Usage {
+            input: self.usage.input as f64,
+            cache_read: self.usage.cache_read as f64,
+            cache_write: self.usage.cache_write as f64,
+            total_tokens: self.usage.total_tokens as f64,
+            cost: self.usage.cost,
+            context_tokens: self.usage.context_tokens as f64,
+            context_window: self
+                .usage
+                .context_window
+                .map_or(0.0, |window| window as f64),
+            output_rate: self.turn_started_at.and_then(|started| {
+                crate::chat::render::output_rate(
+                    self.usage.output.saturating_sub(self.turn_output_from),
+                    now_ms() - started,
+                )
+            }),
+        })
+    }
+
     async fn on_settled(&mut self, produced: bool, failure: Option<&str>) {
         self.log.debug(
             "the turn settled",
@@ -1784,26 +1820,7 @@ impl Running {
             .or_else(|| self.last_speaker_id.clone())
             .unwrap_or_else(|| self.options.owner_id.clone());
         let mention = format!("<@{who}> ");
-        let spent = if self.usage.turns > 0 {
-            #[expect(
-                clippy::cast_precision_loss,
-                reason = "token totals sit far below f64's exact range"
-            )]
-            let shown = crate::chat::render::Usage {
-                input: self.usage.input as f64,
-                cache_read: self.usage.cache_read as f64,
-                total_tokens: self.usage.total_tokens as f64,
-                cost: self.usage.cost,
-                context_tokens: self.usage.context_tokens as f64,
-                context_window: self
-                    .usage
-                    .context_window
-                    .map_or(0.0, |window| window as f64),
-            };
-            Some(shown)
-        } else {
-            None
-        };
+        let spent = self.shown_usage();
 
         // A turn that failed is not a turn that had nothing to say. Saying so
         // is the difference between "the model was brief" and "the request
