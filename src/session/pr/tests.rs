@@ -1075,10 +1075,11 @@ async fn a_pull_request_from_a_fork_is_opened_against_its_parent() {
     assert_eq!(pull.get("base"), Some(&serde_json::json!("trunk")));
 }
 
-/// A fork of somebody else's is not forked itself. The bot forks the parent
-/// the work is for and opens the request there.
+/// Somebody else's fork is forked itself, and the request is opened against
+/// it rather than against the root of its fork network: the work was asked
+/// for there.
 #[tokio::test]
-async fn somebodys_fork_is_forked_from_its_parent_not_itself() {
+async fn somebodys_fork_is_forked_and_opened_against_itself() {
     let kept = with_repo();
     let (_git, run) = fake_git(BTreeMap::from([
         ("rev-parse".to_owned(), ok("feature/thing\n")),
@@ -1099,17 +1100,13 @@ async fn somebodys_fork_is_forked_from_its_parent_not_itself() {
                 }),
             ),
         ),
-        ("POST /repos/upstream/project/forks".to_owned(), forked()),
+        ("POST /repos/bywalker/project/forks".to_owned(), forked()),
         (
             "GET /repos/errand-bot-login/project-1".to_owned(),
             (200, serde_json::json!({})),
         ),
         (
-            "GET /repos/upstream/project".to_owned(),
-            (200, serde_json::json!({"default_branch": "trunk"})),
-        ),
-        (
-            "POST /repos/upstream/project/pulls".to_owned(),
+            "POST /repos/bywalker/project/pulls".to_owned(),
             (201, serde_json::json!({"html_url": "https://x/2"})),
         ),
     ]));
@@ -1121,15 +1118,23 @@ async fn somebodys_fork_is_forked_from_its_parent_not_itself() {
         &immediate_sleep(),
     )
     .await
-    .expect("a pull request through a fork of the parent");
+    .expect("a pull request against the fork it was asked for");
 
     let paths = api_fake.paths.lock().unwrap().join("\n");
     assert!(
-        paths.contains("POST /repos/upstream/project/forks"),
+        paths.contains("POST /repos/bywalker/project/forks"),
         "{paths}"
     );
     assert!(
-        !paths.contains("POST /repos/bywalker/project/forks"),
+        !paths.contains("POST /repos/upstream/project/forks"),
+        "{paths}"
+    );
+    assert!(
+        paths.contains("POST /repos/bywalker/project/pulls"),
+        "{paths}"
+    );
+    assert!(
+        !paths.contains("POST /repos/upstream/project/pulls"),
         "{paths}"
     );
     let sent = api_fake.bodies.lock().unwrap().clone();
@@ -1141,5 +1146,6 @@ async fn somebodys_fork_is_forked_from_its_parent_not_itself() {
         pull.get("head"),
         Some(&serde_json::json!("errand-bot-login:feature/thing"))
     );
-    assert_eq!(pull.get("base"), Some(&serde_json::json!("trunk")));
+    // The branch the request merges into is the fork's own default.
+    assert_eq!(pull.get("base"), Some(&serde_json::json!("main")));
 }

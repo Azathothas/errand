@@ -455,9 +455,10 @@ const FORK_POLL_MS: u64 = 1_000;
 struct Looked {
     /// Whether the account this token belongs to can push to it.
     can_push: bool,
-    /// The repository this one was forked from, when it is a fork. A pull
-    /// request from a fork is made against its parent, so this, and not the
-    /// clone, is where work from a fork is meant to land.
+    /// The repository this one was forked from, when it is a fork. Used only
+    /// when the bot can push to the fork itself: a fork the bot owns exists
+    /// to carry work upstream, so the parent, and not the fork, is where the
+    /// work is meant to land.
     parent: Option<Repo>,
 }
 
@@ -513,7 +514,8 @@ fn first_line(text: &str) -> String {
         .to_owned()
 }
 
-/// The bot's fork of the upstream, once it is there to push to.
+/// The bot's fork of the repository the work is for, once it is there to
+/// push to.
 ///
 /// Where it lands is read from GitHub rather than assumed. The name is not
 /// always the upstream's, since an account already holding a repository of
@@ -689,11 +691,12 @@ async fn push_work(
 
 /// Opens the pull request, and returns where it is.
 ///
-/// A pull request from a fork is made against its parent, so a session that
-/// cloned its fork still lands the work on the repository it came from, and
-/// the fork is only where the branch lives. Where the branch cannot be pushed
-/// already, a fork of the base is made first: a bot that never needs write
-/// access to somebody else's repository cannot lose it.
+/// The work is meant for the repository the session cloned. Where the bot
+/// cannot push to it, that repository is forked, the branch lives on the
+/// fork, and the request is opened against the original. A repository the
+/// bot can push to that is itself a fork defers to its parent instead: a
+/// fork the bot owns exists to carry work upstream, so a session that
+/// cloned its own fork still lands the work where the fork came from.
 pub async fn open_pull_request(
     request: &Request,
     run: &Run,
@@ -706,11 +709,14 @@ pub async fn open_pull_request(
     let origin = origin_remote(run, &project_path).await?;
 
     let looked = look_at(api, &request.github.token, &origin).await;
-    let base = looked.parent.unwrap_or_else(|| origin.clone());
-    let pushing_to = if looked.can_push {
-        origin
+    let (base, pushing_to) = if looked.can_push {
+        (
+            looked.parent.unwrap_or_else(|| origin.clone()),
+            origin.clone(),
+        )
     } else {
-        fork_of(api, &request.github.token, &base, sleep).await?
+        let fork = fork_of(api, &request.github.token, &origin, sleep).await?;
+        (origin.clone(), fork)
     };
 
     let summary = push_work(
