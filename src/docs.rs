@@ -319,6 +319,10 @@ fn defaults_table() -> BTreeMap<&'static str, Value> {
             "output/maxattachmentspermessage",
             serde_json::json!(defaults::MAX_ATTACHMENTS_PER_MESSAGE),
         ),
+        (
+            "output/maxuploadbytes",
+            serde_json::json!(defaults::MAX_UPLOAD_BYTES),
+        ),
         ("output/postdiffs", Value::Bool(defaults::POST_DIFFS)),
         (
             "limits/maxconcurrentturns",

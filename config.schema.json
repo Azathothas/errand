@@ -323,6 +323,10 @@
           "type": "number",
           "description": "Most attached files taken from one message. The rest are refused."
         },
+        "maxUploadBytes": {
+          "type": "number",
+          "description": "Largest file uploaded on request with `!file`, in bytes."
+        },
         "postDiffs": {
           "type": "boolean",
           "description": "Post a diff after the agent changes a file."

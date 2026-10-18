@@ -476,6 +476,8 @@ pub struct OutputConfig {
     pub max_attachment_bytes: u64,
     /// Most attached files taken from one message. The rest are refused.
     pub max_attachments_per_message: usize,
+    /// Largest file uploaded on request with `!file`, in bytes.
+    pub max_upload_bytes: u64,
     /// Post a diff after the agent changes a file.
     pub post_diffs: bool,
 }
@@ -630,6 +632,8 @@ pub mod defaults {
     pub const MAX_ATTACHMENT_BYTES: u64 = 5 * 1024 * 1024;
     /// Most attached files taken from one message.
     pub const MAX_ATTACHMENTS_PER_MESSAGE: usize = 4;
+    /// Largest file uploaded on request with `!file`. Discord refuses more.
+    pub const MAX_UPLOAD_BYTES: u64 = 20 * 1024 * 1024;
     /// Whether a diff is posted after the agent changes a file.
     pub const POST_DIFFS: bool = true;
 

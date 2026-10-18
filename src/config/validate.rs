@@ -92,11 +92,12 @@ const KNOWN_EGRESS: [&str; 3] = ["mode", "allow", "allowInternal"];
 const KNOWN_POLICY_EXTRA: [&str; 3] = ["read", "write", "execute"];
 const KNOWN_SHUTDOWN: [&str; 1] = ["allowedUserIds"];
 const KNOWN_WEB: [&str; 4] = ["host", "port", "observer", "publicUrl"];
-const KNOWN_OUTPUT: [&str; 5] = [
+const KNOWN_OUTPUT: [&str; 6] = [
     "forwardToolOutput",
     "maxToolOutputChars",
     "maxAttachmentBytes",
     "maxAttachmentsPerMessage",
+    "maxUploadBytes",
     "postDiffs",
 ];
 const KNOWN_LIMITS: [&str; 4] = [
@@ -1293,6 +1294,13 @@ fn validate_output(raw: &Map<String, Value>, problems: &mut Problems) -> OutputC
             &source,
             "maxAttachmentsPerMessage",
             schema::defaults::MAX_ATTACHMENTS_PER_MESSAGE,
+            "output",
+            problems,
+        ),
+        max_upload_bytes: positive_as(
+            &source,
+            "maxUploadBytes",
+            schema::defaults::MAX_UPLOAD_BYTES,
             "output",
             problems,
         ),

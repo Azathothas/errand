@@ -147,6 +147,7 @@ How much of the agent's activity reaches the thread.
 | `maxToolOutputChars` | `number` | `1500` | Longest tool output posted before it is truncated and marked as such. |
 | `maxAttachmentBytes` | `number` | `5242880` | Largest attached file taken into a session, in bytes. |
 | `maxAttachmentsPerMessage` | `number` | `4` | Most attached files taken from one message. The rest are refused. |
+| `maxUploadBytes` | `number` | `20971520` | Largest file uploaded on request with `!file`, in bytes. |
 | `postDiffs` | `boolean` | `true` | Post a diff after the agent changes a file. |
 
 ## web

@@ -4,7 +4,7 @@
 //! resolving what somebody typed, deciding what is small enough to show, and
 //! reporting an edit as a diff rather than as a name.
 
-use super::{MAX_DIFFABLE_BYTES, MAX_INLINE, MAX_UPLOAD_BYTES, Running};
+use super::{MAX_DIFFABLE_BYTES, MAX_INLINE, Running};
 use crate::chat::diff::file_diff;
 use crate::chat::render::{directory_listing, file_view};
 use crate::log::{LogValue, fields};
@@ -218,7 +218,8 @@ impl Running {
             self.say(&format!("`{wanted}` is not a file")).await;
             return;
         }
-        if meta.len() > MAX_UPLOAD_BYTES {
+        let limit = self.options.config.output.max_upload_bytes;
+        if meta.len() > limit {
             #[expect(
                 clippy::cast_precision_loss,
                 clippy::cast_possible_truncation,
@@ -226,7 +227,7 @@ impl Running {
             )]
             let kilobytes = (meta.len() as f64 / 1024.0).round() as u64;
             self.say(&format!(
-                "`{wanted}` is {kilobytes} KB, larger than the upload limit"
+                "`{wanted}` is {kilobytes} KB, larger than the {limit} byte upload limit"
             ))
             .await;
             return;

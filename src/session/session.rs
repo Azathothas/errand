@@ -176,9 +176,6 @@ fn is_quiet_ending(why: EndReason) -> bool {
 /// Tools whose effect is worth showing as a diff.
 const EDITING_TOOLS: [&str; 5] = ["edit", "write", "create", "str_replace", "multi_edit"];
 
-/// Largest file uploaded on request. The service refuses much more than this.
-const MAX_UPLOAD_BYTES: u64 = 8 * 1024 * 1024;
-
 /// Largest file diffed. Beyond this the change is summarised, not shown.
 const MAX_DIFFABLE_BYTES: u64 = 512 * 1024;
 
