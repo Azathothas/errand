@@ -1,6 +1,12 @@
 # Changelog
 
 What changed in each release, from the commit messages.
+## [0.3.2] - 2026-10-19
+
+
+### Fixes
+- (session) Quote the failing line when a sandbox runs out of disk ([206fc5a](https://github.com/QaidVoid/errand/commit/206fc5ae53f53e645731f706dae327251c9247cf))
+
 ## [0.3.1] - 2026-10-18
 
 
