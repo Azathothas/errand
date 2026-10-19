@@ -2159,26 +2159,33 @@ async fn help_is_listed_without_troubling_the_agent() {
     .await;
 }
 
-/// ENOSPC in a sandbox is the session's own scratch, not the host disk, so
-/// the message names its limits and the knobs rather than a code, and never
-/// blames the host, which sends operators to `df` on a host with room.
+/// ENOSPC in a sandbox is usually the session's own scratch, not the host
+/// disk, so the message quotes what failed and names the scratch mounts with
+/// their sizes and knobs, rather than giving a code or blaming the host.
 #[tokio::test]
 async fn an_agent_that_died_for_want_of_disk_says_so_not_just_a_code() {
     with_session(SessionTestCase::default(), |harness| {
         Box::pin(async move {
-            harness
-                .controls()
-                .complain("Error: ENOSPC: no space left on device, write");
+            harness.controls().complain(
+                "compiling\nerror: failed to write /tmp/out.rlib: No space left on device",
+            );
             settle().await;
             harness.controls().end(1);
             settle().await;
 
             let said = harness.thread.everything();
-            assert!(said.contains("sandbox's scratch space"), "{said}");
+            assert!(
+                said.contains("\"error: failed to write /tmp/out.rlib"),
+                "quotes what failed: {said}"
+            );
             assert!(said.contains("sandbox.tmpSize"), "names the knob: {said}");
             assert!(
                 said.contains("sandbox.diskTmp"),
                 "names the disk option: {said}"
+            );
+            assert!(
+                !said.contains("sandbox.fileMax"),
+                "an fsize limit fails with EFBIG, not ENOSPC: {said}"
             );
             assert!(
                 said.contains("Post here to continue"),
@@ -2188,6 +2195,34 @@ async fn an_agent_that_died_for_want_of_disk_says_so_not_just_a_code() {
             assert_eq!(*harness.ended.lock().unwrap(), [EndReason::ResourceLimit]);
         })
     })
+    .await;
+}
+
+/// With `/tmp` already on disk, raising the tmpfs or moving `/tmp` to disk
+/// would change nothing, so neither is offered.
+#[tokio::test]
+async fn running_out_of_disk_with_disk_tmp_on_does_not_offer_disk_tmp() {
+    with_session(
+        SessionTestCase {
+            config: Some(config_with(&json!({ "sandbox": { "diskTmp": true } }))),
+            ..SessionTestCase::default()
+        },
+        |harness| {
+            Box::pin(async move {
+                harness
+                    .controls()
+                    .complain("Error: ENOSPC: no space left on device, write");
+                settle().await;
+                harness.controls().end(1);
+                settle().await;
+
+                let said = harness.thread.everything();
+                assert!(said.contains("on the host disk"), "{said}");
+                assert!(!said.contains("sandbox.tmpSize"), "{said}");
+                assert!(!said.contains("turn on sandbox.diskTmp"), "{said}");
+            })
+        },
+    )
     .await;
 }
 

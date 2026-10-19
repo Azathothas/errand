@@ -1941,22 +1941,45 @@ impl Running {
     }
 
     /// What the agent's dying words say went wrong, when they say anything.
-    fn diagnose(words: &str) -> Option<&'static str> {
-        let lower = words.to_lowercase();
-        if lower.contains("enospc") || lower.contains("no space left on device") {
-            return Some(
-                "it ran out of the sandbox's scratch space (raise sandbox.tmpSize, \
-                 sandbox.shmSize, or sandbox.fileMax, or turn on sandbox.diskTmp)",
-            );
+    ///
+    /// Quotes the line that said it, because that line is what names the
+    /// file or mount, and the reason alone leaves a reader guessing which.
+    fn diagnose(&self, words: &str) -> Option<String> {
+        let said = |needles: &[&str]| {
+            words
+                .lines()
+                .find(|line| {
+                    let lower = line.to_lowercase();
+                    needles.iter().any(|needle| lower.contains(needle))
+                })
+                .map(|line| first_line(line.trim()))
+        };
+        if let Some(line) = said(&["enospc", "no space left on device"]) {
+            let sandbox = &self.options.config.sandbox;
+            let tmp = if sandbox.disk_tmp {
+                "/tmp is on the host disk because sandbox.diskTmp is on".to_owned()
+            } else {
+                format!(
+                    "/tmp is a {} in-memory tmpfs (raise sandbox.tmpSize, or turn on \
+                     sandbox.diskTmp to put it on disk)",
+                    sandbox.tmp_size
+                )
+            };
+            return Some(format!(
+                "it ran out of space while writing, saying \"{line}\". In the sandbox, \
+                 {tmp}, and /dev/shm is {} (raise sandbox.shmSize)",
+                sandbox.shm_size
+            ));
         }
-        if lower.contains("enomem")
-            || lower.contains("out of memory")
-            || lower.contains("cannot allocate memory")
-        {
-            return Some("the host it runs on has run out of memory");
+        if let Some(line) = said(&["enomem", "out of memory", "cannot allocate memory"]) {
+            return Some(format!(
+                "the host it runs on has run out of memory, saying \"{line}\""
+            ));
         }
-        if lower.contains("eacces") || lower.contains("permission denied") {
-            return Some("it was refused permission to something it needs");
+        if let Some(line) = said(&["eacces", "permission denied"]) {
+            return Some(format!(
+                "it was refused permission to something it needs, saying \"{line}\""
+            ));
         }
         None
     }
@@ -1970,7 +1993,7 @@ impl Running {
             .client
             .as_ref()
             .map_or_else(String::new, AgentClient::dying_words);
-        if let Some(named) = Self::diagnose(&words) {
+        if let Some(named) = self.diagnose(&words) {
             self.end_because(
                 EndReason::ResourceLimit,
                 &format!("this session stopped because {named}. {CONTINUE_HINT}"),
