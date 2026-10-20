@@ -615,3 +615,186 @@ fn every_builtin_tool_is_allowed_by_default() {
         "{config}"
     );
 }
+
+/// The broker's route for one provider, as the backend hands it over.
+fn through_broker(name: &str) -> BTreeMap<String, BrokeredProvider> {
+    BTreeMap::from([(
+        name.to_owned(),
+        BrokeredProvider {
+            base_url: format!("http://169.254.169.1:8443/provider/{name}"),
+        },
+    )])
+}
+
+/// A provider that serves images and no chat model is not told to the agent
+/// as a provider, which would refuse it for listing no models and offer its
+/// image models for chat. The image tool is pointed at the broker with the
+/// nonce's variable instead, so the real endpoint and key stay outside.
+#[test]
+fn an_images_only_provider_is_written_for_the_image_tool_alone() {
+    let mut defined = serde_json::Map::new();
+    defined.insert(
+        "pictures".to_owned(),
+        json!({
+            "credential": "k",
+            "baseUrl": "https://images.example/v1",
+            "images": { "model": "image", "models": ["image", " image:max "] },
+        }),
+    );
+    let names = BTreeMap::from([(
+        "pictures".to_owned(),
+        "ERRAND_PROVIDER_PICTURES_API_KEY".to_owned(),
+    )]);
+    let config = kage_config(
+        &defined,
+        &through_broker("pictures"),
+        &BTreeMap::new(),
+        &names,
+        &[],
+        &Denials::default(),
+    );
+
+    assert!(!config.contains("[providers"), "{config}");
+    assert!(
+        config.contains(
+            "\n[tools.image_generation]\n\
+             base_url = \"http://169.254.169.1:8443/provider/pictures\"\n\
+             api_key_env = \"ERRAND_PROVIDER_PICTURES_API_KEY\"\n\
+             model = \"image\"\n\
+             models = [\"image\", \"image:max\"]\n"
+        ),
+        "{config}"
+    );
+    assert!(!config.contains("images.example"), "{config}");
+}
+
+/// Outside the broker the tool reaches the provider's own endpoint, with
+/// its key in the variable the operator named.
+#[test]
+fn an_unbrokered_images_provider_points_the_tool_at_its_endpoint() {
+    let mut defined = serde_json::Map::new();
+    defined.insert(
+        "pictures".to_owned(),
+        json!({
+            "credential": "k",
+            "credentialName": "PICTURES_KEY",
+            "baseUrl": "https://images.example/v1",
+            "images": { "model": "image" },
+        }),
+    );
+    let names = BTreeMap::from([("pictures".to_owned(), "PICTURES_KEY".to_owned())]);
+    let config = kage_config(
+        &defined,
+        &BTreeMap::new(),
+        &BTreeMap::new(),
+        &names,
+        &[],
+        &Denials::default(),
+    );
+
+    assert!(
+        config.contains(
+            "\n[tools.image_generation]\n\
+             base_url = \"https://images.example/v1\"\n\
+             api_key_env = \"PICTURES_KEY\"\n\
+             model = \"image\"\n\n"
+        ),
+        "{config}"
+    );
+    assert!(!config.contains("models = ["), "{config}");
+}
+
+/// A provider the agent already reaches for chat lends the image tool its
+/// endpoint and key, whether kage knows it or errand registers it custom.
+#[test]
+fn a_chat_provider_carrying_images_lends_the_tool_its_endpoint() {
+    let mut defined = serde_json::Map::new();
+    defined.insert(
+        "gateway".to_owned(),
+        json!({
+            "credential": "k",
+            "baseUrl": "https://gateway.example/v1",
+            "models": [{ "id": "chat-model" }],
+            "images": { "model": "image", "models": ["image", "image:low"] },
+        }),
+    );
+    let names = BTreeMap::from([(
+        "gateway".to_owned(),
+        "ERRAND_PROVIDER_GATEWAY_API_KEY".to_owned(),
+    )]);
+    let config = kage_config(
+        &defined,
+        &through_broker("gateway"),
+        &BTreeMap::new(),
+        &names,
+        &[],
+        &Denials::default(),
+    );
+    assert!(config.contains("[providers.custom.gateway]"), "{config}");
+    assert!(
+        config.contains(
+            "\n[tools.image_generation]\n\
+             provider = \"gateway\"\n\
+             model = \"image\"\n\
+             models = [\"image\", \"image:low\"]\n"
+        ),
+        "{config}"
+    );
+
+    let mut known = serde_json::Map::new();
+    known.insert(
+        "openai".to_owned(),
+        json!({ "credential": "k", "images": { "model": "gpt-image-1" } }),
+    );
+    let names = BTreeMap::from([("openai".to_owned(), "OPENAI_API_KEY".to_owned())]);
+    let config = kage_config(
+        &known,
+        &BTreeMap::new(),
+        &BTreeMap::new(),
+        &names,
+        &[],
+        &Denials::default(),
+    );
+    assert!(config.contains("[providers.openai]"), "{config}");
+    assert!(
+        config.contains(
+            "\n[tools.image_generation]\nprovider = \"openai\"\nmodel = \"gpt-image-1\"\n"
+        ),
+        "{config}"
+    );
+}
+
+/// No `images` writes no table, and neither does a provider the agent could
+/// not be pointed at: nothing tells it where the endpoint is.
+#[test]
+fn no_image_tool_without_images_or_an_endpoint() {
+    let mut defined = serde_json::Map::new();
+    defined.insert(
+        "chat".to_owned(),
+        json!({ "credential": "k", "baseUrl": "https://chat.example/v1", "models": [{ "id": "m" }] }),
+    );
+    let names = BTreeMap::from([("chat".to_owned(), "CHAT_KEY".to_owned())]);
+    let config = kage_config(
+        &defined,
+        &BTreeMap::new(),
+        &BTreeMap::new(),
+        &names,
+        &[],
+        &Denials::default(),
+    );
+    assert!(!config.contains("image_generation"), "{config}");
+
+    defined.insert(
+        "nowhere".to_owned(),
+        json!({ "credential": "k", "images": { "model": "image" } }),
+    );
+    let config = kage_config(
+        &defined,
+        &BTreeMap::new(),
+        &BTreeMap::new(),
+        &names,
+        &[],
+        &Denials::default(),
+    );
+    assert!(!config.contains("image_generation"), "{config}");
+}

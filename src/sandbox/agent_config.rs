@@ -68,9 +68,10 @@ const KAGE_KNOWN: [&str; 20] = [
 /// Plugin and MCP tools are not here: they are covered by the wildcard
 /// under `permissions.mcp`, since their names carry a server prefix this
 /// list cannot know.
-const TOOLS_ALLOWED: [&str; 10] = [
+const TOOLS_ALLOWED: [&str; 11] = [
     "edit",
     "find",
+    "generate_image",
     "grep",
     "ls",
     "read",
@@ -238,7 +239,7 @@ fn model_efforts(entry: &Value) -> Option<String> {
 /// wire protocol they speak, defaulting to `openai`. A provider an
 /// extension registers (`extension: true`) is left out entirely: the plugin
 /// brings its own endpoint, and writing errand's would only disagree with
-/// it.
+/// it. The provider carrying `images` also gives the agent its image tool.
 pub fn kage_config(
     defined: &Map<String, Value>,
     brokered: &BTreeMap<String, BrokeredProvider>,
@@ -257,6 +258,10 @@ pub fn kage_config(
         .collect::<std::collections::BTreeSet<_>>()
         .into_iter()
         .collect();
+    // Where each provider is reached, and which ones the agent is told about,
+    // for the image tool to reuse below.
+    let mut endpoints: BTreeMap<&str, String> = BTreeMap::new();
+    let mut written: Vec<&str> = Vec::new();
     for name in names {
         let through = brokered.get(name);
         let definition = defined
@@ -271,6 +276,9 @@ pub fn kage_config(
         });
         if through.is_none() && definition.is_none() {
             continue;
+        }
+        if let Some(url) = &base_url {
+            endpoints.insert(name.as_str(), url.clone());
         }
         let known = KAGE_KNOWN.contains(&name.as_str());
         let models: Vec<String> = if known {
@@ -306,6 +314,7 @@ pub fn kage_config(
         if !worth_writing {
             continue;
         }
+        written.push(name.as_str());
         if known {
             let _ = writeln!(out, "\n[providers.{}]", toml_key(name));
             if let Some(url) = base_url {
@@ -333,8 +342,73 @@ pub fn kage_config(
             );
         }
     }
+    out.push_str(&image_generation(
+        defined,
+        &written,
+        &endpoints,
+        credential_names,
+    ));
     out.push_str(&plugin_capabilities(plugins));
     out.push_str(&permissions_section(denied));
+    out
+}
+
+/// The `[tools.image_generation]` table, for the provider whose definition
+/// carries `images`, or nothing when none does.
+///
+/// A provider the agent is already told about is named, and lends the tool
+/// its endpoint and key the way the agent reaches it, broker and nonce
+/// included. One that lists no models is not told about above, since the
+/// agent refuses a provider without models and image models must not be
+/// offered for chat: it is named by its endpoint and the variable its key is
+/// read from instead, which under the broker are the broker's address and the
+/// nonce. One with neither is left out, and the session runs without the tool.
+fn image_generation(
+    defined: &Map<String, Value>,
+    written: &[&str],
+    endpoints: &BTreeMap<&str, String>,
+    credential_names: &BTreeMap<String, String>,
+) -> String {
+    let Some((name, images)) = defined
+        .iter()
+        .filter(|(_, fields)| fields.get("extension").and_then(Value::as_bool) != Some(true))
+        .find_map(|(name, fields)| Some((name, fields.get("images")?.as_object()?)))
+    else {
+        return String::new();
+    };
+    let Some(model) = images
+        .get("model")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|model| !model.is_empty())
+    else {
+        return String::new();
+    };
+    let mut out = String::from("\n[tools.image_generation]\n");
+    if written.contains(&name.as_str()) {
+        let _ = writeln!(out, "provider = {}", toml_string(name));
+    } else if let Some(url) = endpoints.get(name.as_str()) {
+        let _ = writeln!(out, "base_url = {}", toml_string(url));
+        if let Some(env) = credential_names.get(name) {
+            let _ = writeln!(out, "api_key_env = {}", toml_string(env));
+        }
+    } else {
+        return String::new();
+    }
+    let _ = writeln!(out, "model = {}", toml_string(model));
+    let models: Vec<String> = images
+        .get("models")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .map(str::trim)
+        .filter(|model| !model.is_empty())
+        .map(toml_string)
+        .collect();
+    if !models.is_empty() {
+        let _ = writeln!(out, "models = [{}]", models.join(", "));
+    }
     out
 }
 
