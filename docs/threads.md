@@ -52,6 +52,9 @@ the agent generates arrives as an upload, captioned with where it was saved
 (see [generating images](/images)). A turn ends with a line that names you, so a
 phone tells you when it is your turn again.
 
+A model that answers with a picture inside its text, as base64, does not turn
+into hundreds of messages: the long run is replaced by a note of its size.
+
 Reactions on your own message track its fate: accepted, then succeeded, failed,
 or interrupted. There is only ever one, so scrolling back reads as final state
 rather than as a history of transitions.

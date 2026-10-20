@@ -9,6 +9,7 @@
 //! than the cap allows.
 
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
@@ -147,6 +148,55 @@ fn describe_exit(code: i64, last_words: &str) -> String {
         Some(words) => format!("the agent exited with code {code}: {words}"),
         None => format!("the agent exited with code {code} and said nothing about why"),
     }
+}
+
+/// The longest base64 run of an inline image left as the agent wrote it.
+///
+/// A small icon costs a few lines at most. Anything longer is a picture whose
+/// bytes are worth nothing to a person reading the agent's words.
+const INLINE_IMAGE_KEPT_CHARS: usize = 4_096;
+
+/// `text` with each long `data:image/...;base64,` run replaced by a marker
+/// saying how large the image was, in decimal kilobytes.
+///
+/// Some models answer a request for a picture with the picture inside their
+/// text. Passed on as written, one such answer is megabytes of base64 for
+/// every reader of the session's words, whatever shows them. An image the
+/// agent saves as a file is reported as a file instead, which is the way a
+/// picture should arrive.
+fn without_inline_images(text: &str) -> String {
+    const SCHEME: &str = "data:image/";
+    const BASE64: &str = ";base64,";
+    let mut out = String::new();
+    let mut rest = text;
+    while let Some(at) = rest.find(SCHEME) {
+        let after = &rest[at + SCHEME.len()..];
+        let subtype = after
+            .bytes()
+            .take_while(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'+' | b'-'))
+            .count();
+        let Some(payload) = after[subtype..].strip_prefix(BASE64) else {
+            let end = at + SCHEME.len();
+            out.push_str(&rest[..end]);
+            rest = &rest[end..];
+            continue;
+        };
+        let encoded = payload
+            .bytes()
+            .take_while(|b| b.is_ascii_alphanumeric() || matches!(b, b'+' | b'/' | b'='))
+            .count();
+        let end = at + SCHEME.len() + subtype + BASE64.len() + encoded;
+        if encoded > INLINE_IMAGE_KEPT_CHARS {
+            out.push_str(&rest[..at]);
+            let kilobytes = (encoded / 4 * 3).div_ceil(1000);
+            let _ = write!(out, "[inline image omitted: {kilobytes} kB]");
+        } else {
+            out.push_str(&rest[..end]);
+        }
+        rest = &rest[end..];
+    }
+    out.push_str(rest);
+    out
 }
 
 /// The reply to a dialog request, in the shapes the protocol carries.
@@ -1200,7 +1250,7 @@ impl Shared {
         if !text.trim().is_empty()
             && let Some(on_text) = &self.handlers.on_assistant_text
         {
-            on_text(text.to_owned());
+            on_text(without_inline_images(text));
         }
     }
 

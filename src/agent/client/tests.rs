@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 use serde_json::{Value, json};
 use tokio::sync::watch;
 
-use super::{AgentClient, AgentHandlers, AgentProcess, AnswerOutcome};
+use super::{AgentClient, AgentHandlers, AgentProcess, AnswerOutcome, without_inline_images};
 use crate::agent::protocol::DialogRequest;
 use crate::agent::protocol::ProducedFile;
 use crate::agent::protocol::Usage;
@@ -824,6 +824,27 @@ async fn a_generated_image_reaches_the_tool_end_handler() {
         }]
     );
     setup.finish().await;
+}
+
+#[test]
+fn a_long_inline_image_is_replaced_by_its_size() {
+    let payload = "A".repeat(2_000_000);
+    let text = format!("Here it is:\n![image](data:image/png;base64,{payload})\nDone.");
+    let folded = without_inline_images(&text);
+    assert_eq!(
+        folded,
+        "Here it is:\n![image]([inline image omitted: 1500 kB])\nDone."
+    );
+
+    let icon = format!("tiny data:image/svg+xml;base64,{} icon", "B".repeat(100));
+    assert_eq!(without_inline_images(&icon), icon);
+    let unrelated = "data:image/png is a scheme, and data:text/plain;base64,QQ== is not an image";
+    assert_eq!(without_inline_images(unrelated), unrelated);
+    let two = format!("a data:image/jpeg;base64,{payload} b data:image/webp;base64,{payload}");
+    assert_eq!(
+        without_inline_images(&two),
+        "a [inline image omitted: 1500 kB] b [inline image omitted: 1500 kB]"
+    );
 }
 
 #[tokio::test]
