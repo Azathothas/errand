@@ -1,12 +1,16 @@
 //! Reading and showing the project from a thread.
 //!
 //! The containment rule is `crate::sandbox::paths`. This is the session half:
-//! resolving what somebody typed, deciding what is small enough to show, and
-//! reporting an edit as a diff rather than as a name.
+//! resolving what somebody typed, deciding what is small enough to show,
+//! reporting an edit as a diff rather than as a name, and posting an image the
+//! agent made as an upload rather than as a path.
 
-use super::{MAX_DIFFABLE_BYTES, MAX_INLINE, Running};
+use std::fmt::Write as _;
+
+use super::{MAX_DIFFABLE_BYTES, MAX_IMAGES_PER_TURN, MAX_INLINE, Running};
+use crate::agent::protocol::ProducedFile;
 use crate::chat::diff::file_diff;
-use crate::chat::render::{directory_listing, file_view};
+use crate::chat::render::{bytes as byte_count, directory_listing, file_view, widen};
 use crate::log::{LogValue, fields};
 use crate::sandbox::paths;
 use crate::session::event::SessionEvent;
@@ -247,4 +251,184 @@ impl Running {
             })
             .await;
     }
+
+    /// Posts an image the agent made as an upload, captioned with where it
+    /// is, its size, and what its server said about it. One that cannot be
+    /// posted is reported in the thread with the reason instead, so somebody
+    /// told that an image was saved is not left waiting for it. Either way it
+    /// counts toward the turn's cap.
+    pub(super) async fn post_image(&mut self, file: &ProducedFile) {
+        if self.turn_images >= MAX_IMAGES_PER_TURN {
+            if self.turn_images == MAX_IMAGES_PER_TURN {
+                self.say(&format!(
+                    "the agent made more than {MAX_IMAGES_PER_TURN} images this turn. The rest \
+                     are in the project, and `!file` posts one"
+                ))
+                .await;
+            }
+            self.turn_images += 1;
+            return;
+        }
+        self.turn_images += 1;
+        match self.read_image(&file.uri) {
+            Ok((display, bytes)) => {
+                self.log.info(
+                    "posting an image the agent made",
+                    &fields([("path", LogValue::from(display.as_str()))]),
+                );
+                let name = display.rsplit('/').next().unwrap_or("image").to_owned();
+                let size = u64::try_from(bytes.len()).unwrap_or(u64::MAX);
+                let caption = image_caption(&display, widen(size), file.note.as_deref());
+                self.views
+                    .send(SessionEvent::Upload {
+                        name,
+                        bytes,
+                        caption,
+                    })
+                    .await;
+            }
+            Err(refusal) => {
+                self.log.warn(
+                    "an image the agent made was not posted",
+                    &fields([
+                        ("uri", LogValue::from(file.uri.as_str())),
+                        ("reason", LogValue::from(refusal.as_str())),
+                    ]),
+                );
+                self.say(&refusal).await;
+            }
+        }
+    }
+
+    /// The project path and bytes of the image `uri` names, or the line that
+    /// says why it cannot be posted.
+    ///
+    /// The agent names the file and writes the tree it sits in, so the path
+    /// is untrusted: it is opened beneath the project, refusing a link however
+    /// it is spelled, as `!file` opens one, and without waiting on a pipe
+    /// planted at the name. What is posted is what was read from the file that
+    /// was opened, never more than the upload limit, and of a type its own
+    /// bytes declare, whatever the agent called it.
+    fn read_image(&self, uri: &str) -> Result<(String, Vec<u8>), String> {
+        use std::io::Read;
+
+        let Some(agent_path) = agent_path_of(uri).filter(|path| self.host_path(path).is_some())
+        else {
+            return Err(
+                "an image the agent made is not a file in this session's project, so it was \
+                 not posted"
+                    .to_owned(),
+            );
+        };
+        let display = self.display_path(&agent_path);
+        let unposted = |why: &str| format!("generated `{display}` was not posted: {why}");
+        let limit = self.options.config.output.max_upload_bytes;
+        let over = |size: u64| {
+            format!(
+                "generated `{display}` is {}, over the {} upload limit",
+                byte_count(widen(size)),
+                byte_count(widen(limit))
+            )
+        };
+        let root = &self.options.project.path;
+        let opened =
+            paths::open_beneath(root, &display, &paths::OpenOptions::read()).map_err(|error| {
+                if error.raw_os_error() == Some(nix::errno::Errno::ELOOP as i32) {
+                    unposted("a link is in its path")
+                } else {
+                    unposted(&error.to_string())
+                }
+            })?;
+        let meta = opened
+            .metadata()
+            .map_err(|error| unposted(&error.to_string()))?;
+        if !meta.is_file() {
+            return Err(unposted("it is not a file"));
+        }
+        if meta.len() > limit {
+            return Err(over(meta.len()));
+        }
+        // No further than the limit allows: a file grown since it was measured
+        // is refused rather than read whole.
+        let mut bytes = Vec::new();
+        opened
+            .take(limit.saturating_add(1))
+            .read_to_end(&mut bytes)
+            .map_err(|error| unposted(&error.to_string()))?;
+        let size = u64::try_from(bytes.len()).unwrap_or(u64::MAX);
+        if size > limit {
+            return Err(over(size));
+        }
+        if !is_image(&bytes) {
+            return Err(unposted("it is not a PNG, JPEG, GIF or WebP image"));
+        }
+        Ok((display, bytes))
+    }
+}
+
+/// The longest part of an image server's note shown in a caption.
+const MAX_NOTE_CHARS: usize = 300;
+
+/// The path a `file://` URI names, percent-decoded. Nothing for another
+/// scheme, a URI naming a host other than this one, or one that does not
+/// decode to UTF-8.
+fn agent_path_of(uri: &str) -> Option<String> {
+    let rest = uri.strip_prefix("file://")?;
+    let path = rest.strip_prefix("localhost").unwrap_or(rest);
+    if !path.starts_with('/') {
+        return None;
+    }
+    let raw = path.as_bytes();
+    let mut decoded = Vec::with_capacity(raw.len());
+    let mut at = 0;
+    while at < raw.len() {
+        if raw[at] == b'%' {
+            let hex = raw.get(at + 1..at + 3)?;
+            if !hex.iter().all(u8::is_ascii_hexdigit) {
+                return None;
+            }
+            decoded.push(u8::from_str_radix(std::str::from_utf8(hex).ok()?, 16).ok()?);
+            at += 3;
+        } else {
+            decoded.push(raw[at]);
+            at += 1;
+        }
+    }
+    String::from_utf8(decoded).ok()
+}
+
+/// Whether `bytes` declare themselves an image of a type a chat service shows
+/// as a picture: PNG, JPEG, GIF or WebP.
+fn is_image(bytes: &[u8]) -> bool {
+    bytes.starts_with(&[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A])
+        || bytes.starts_with(&[0xFF, 0xD8, 0xFF])
+        || bytes.starts_with(b"GIF87a")
+        || bytes.starts_with(b"GIF89a")
+        || (bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP")
+}
+
+/// The caption an image the agent made is posted with: where it is, its
+/// size, and in brackets what its server said, such as a fallback to another
+/// model, so a reader sees it beside the picture.
+///
+/// The note is the server's free text: it is kept to printable ASCII on one
+/// line and cut short, with `...` where it was cut, so it cannot carry
+/// control characters or a wall of text into the thread.
+fn image_caption(display: &str, size: f64, note: Option<&str>) -> String {
+    let mut caption = format!("generated `{display}` {}", byte_count(size));
+    let printable: String = note
+        .unwrap_or_default()
+        .chars()
+        .map(|c| if c.is_ascii_graphic() { c } else { ' ' })
+        .collect();
+    let whole = printable.split_whitespace().collect::<Vec<_>>().join(" ");
+    let note = if whole.len() > MAX_NOTE_CHARS {
+        format!("{}...", whole[..MAX_NOTE_CHARS].trim_end())
+    } else {
+        whole
+    };
+    if !note.is_empty() {
+        let _ = write!(caption, " [{note}]");
+    }
+    caption
 }

@@ -244,17 +244,19 @@ fn what_reaches_a_thread_has_documented_defaults() {
     );
     assert_eq!(config.output.max_upload_bytes, defaults::MAX_UPLOAD_BYTES);
     assert_eq!(config.output.post_diffs, defaults::POST_DIFFS);
+    assert_eq!(config.output.post_images, defaults::POST_IMAGES);
 }
 
 #[test]
 fn what_reaches_a_thread_can_be_turned_up_or_down() {
     let config = validate_config(&valid(json!({
-        "output": { "forwardToolOutput": true, "postDiffs": false, "maxToolOutputChars": 4000, "maxUploadBytes": 8_388_608 },
+        "output": { "forwardToolOutput": true, "postDiffs": false, "postImages": false, "maxToolOutputChars": 4000, "maxUploadBytes": 8_388_608 },
     })))
     .expect("resolves");
 
     assert!(config.output.forward_tool_output);
     assert!(!config.output.post_diffs);
+    assert!(!config.output.post_images);
     assert_eq!(config.output.max_tool_output_chars, 4000);
     assert_eq!(config.output.max_upload_bytes, 8_388_608);
     assert_eq!(

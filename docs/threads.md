@@ -47,8 +47,10 @@ session role grants it and the daemon answers it against its own list.
 ## What comes back
 
 The agent's words as it produces them, the commands it runs as one block that
-extends rather than a message per call, and a diff after each edit. A turn ends
-with a line that names you, so a phone tells you when it is your turn again.
+extends rather than a message per call, and a diff after each edit. A picture
+the agent generates arrives as an upload, captioned with where it was saved
+(see [generating images](/images)). A turn ends with a line that names you, so a
+phone tells you when it is your turn again.
 
 Reactions on your own message track its fate: accepted, then succeeded, failed,
 or interrupted. There is only ever one, so scrolling back reads as final state

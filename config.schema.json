@@ -325,11 +325,15 @@
         },
         "maxUploadBytes": {
           "type": "number",
-          "description": "Largest file uploaded on request with `!file`, in bytes."
+          "description": "Largest file uploaded, on request with `!file` or as an image the agent generated, in bytes."
         },
         "postDiffs": {
           "type": "boolean",
           "description": "Post a diff after the agent changes a file."
+        },
+        "postImages": {
+          "type": "boolean",
+          "description": "Post each image the agent generates to the thread, as an upload with a caption. A turn posts at most four, and the rest stay in the project."
         }
       }
     },

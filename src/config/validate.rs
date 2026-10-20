@@ -92,13 +92,14 @@ const KNOWN_EGRESS: [&str; 3] = ["mode", "allow", "allowInternal"];
 const KNOWN_POLICY_EXTRA: [&str; 3] = ["read", "write", "execute"];
 const KNOWN_SHUTDOWN: [&str; 1] = ["allowedUserIds"];
 const KNOWN_WEB: [&str; 4] = ["host", "port", "observer", "publicUrl"];
-const KNOWN_OUTPUT: [&str; 6] = [
+const KNOWN_OUTPUT: [&str; 7] = [
     "forwardToolOutput",
     "maxToolOutputChars",
     "maxAttachmentBytes",
     "maxAttachmentsPerMessage",
     "maxUploadBytes",
     "postDiffs",
+    "postImages",
 ];
 const KNOWN_LIMITS: [&str; 4] = [
     "maxConcurrentTurns",
@@ -1375,6 +1376,13 @@ fn validate_output(raw: &Map<String, Value>, problems: &mut Problems) -> OutputC
             &source,
             "postDiffs",
             schema::defaults::POST_DIFFS,
+            "output",
+            problems,
+        ),
+        post_images: flag(
+            &source,
+            "postImages",
+            schema::defaults::POST_IMAGES,
             "output",
             problems,
         ),

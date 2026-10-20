@@ -275,12 +275,14 @@ pub enum AcpUpdate {
         id: String,
         raw_input: Option<Value>,
     },
-    /// A tool call finished, with whether it failed and what it said.
+    /// A tool call finished, with whether it failed, what it said, and the
+    /// images it left in the project.
     ToolEnd {
         id: String,
         title: Option<String>,
         failed: bool,
         output: String,
+        files: Vec<ProducedFile>,
     },
     /// Context usage, for the usage line and the window size.
     UsageInfo { usage: Usage, size: f64 },
@@ -295,6 +297,53 @@ pub enum AcpUpdate {
     /// Anything else: plans, modes, notices, subagent and swarm traffic, and
     /// shapes this build does not know. Subagents arrive in a later change.
     Ignored,
+}
+
+/// An image a finished tool call says it wrote, such as one the agent
+/// generated.
+///
+/// Everything here is the agent's word. The daemon opens the file beneath the
+/// project and reads its type from its bytes before anything is posted.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProducedFile {
+    /// Where the agent wrote it, as a `file://` URI on the agent's side.
+    pub uri: String,
+    /// What the image's server said about it, such as a fallback to another
+    /// model, when it said anything.
+    pub note: Option<String>,
+}
+
+/// The images a completed tool call names.
+///
+/// Each `resource_link` part of an image type, which is how kage points a
+/// client at an image it generated. The note an object `rawOutput` carries
+/// rides on each, so it can be shown beside the picture.
+fn produced_files(update: &Value) -> Vec<ProducedFile> {
+    let note = update
+        .get("rawOutput")
+        .and_then(|raw| raw.get("note"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|note| !note.is_empty())
+        .map(str::to_owned);
+    update
+        .get("content")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|part| part.get("content"))
+        .filter(|block| block.get("type").and_then(Value::as_str) == Some("resource_link"))
+        .filter(|link| {
+            link.get("mimeType")
+                .and_then(Value::as_str)
+                .is_some_and(|mime| mime.starts_with("image/"))
+        })
+        .filter_map(|link| link.get("uri").and_then(Value::as_str))
+        .map(|uri| ProducedFile {
+            uri: uri.to_owned(),
+            note: note.clone(),
+        })
+        .collect()
 }
 
 /// Reads the text of a content block, or nothing when it carries no words.
@@ -402,6 +451,11 @@ pub fn classify_update(update: &Value) -> AcpUpdate {
                         .get("rawOutput")
                         .and_then(Value::as_str)
                         .unwrap_or_default(),
+                files: if failed {
+                    Vec::new()
+                } else {
+                    produced_files(update)
+                },
             }
         }
         Some("usage_update") => match usage_of(update) {

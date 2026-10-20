@@ -485,10 +485,14 @@ pub struct OutputConfig {
     pub max_attachment_bytes: u64,
     /// Most attached files taken from one message. The rest are refused.
     pub max_attachments_per_message: usize,
-    /// Largest file uploaded on request with `!file`, in bytes.
+    /// Largest file uploaded, on request with `!file` or as an image the agent
+    /// generated, in bytes.
     pub max_upload_bytes: u64,
     /// Post a diff after the agent changes a file.
     pub post_diffs: bool,
+    /// Post each image the agent generates to the thread, as an upload with a
+    /// caption. A turn posts at most four, and the rest stay in the project.
+    pub post_images: bool,
 }
 
 /// The local web interface.
@@ -641,10 +645,13 @@ pub mod defaults {
     pub const MAX_ATTACHMENT_BYTES: u64 = 5 * 1024 * 1024;
     /// Most attached files taken from one message.
     pub const MAX_ATTACHMENTS_PER_MESSAGE: usize = 4;
-    /// Largest file uploaded on request with `!file`. Discord refuses more.
+    /// Largest file uploaded, on request with `!file` or as an image the agent
+    /// generated. Discord refuses more.
     pub const MAX_UPLOAD_BYTES: u64 = 20 * 1024 * 1024;
     /// Whether a diff is posted after the agent changes a file.
     pub const POST_DIFFS: bool = true;
+    /// Whether an image the agent generates is posted to the thread.
+    pub const POST_IMAGES: bool = true;
 
     /// Sessions that may have a model turn in flight simultaneously.
     pub const MAX_CONCURRENT_TURNS: u32 = 2;

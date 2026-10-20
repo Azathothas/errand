@@ -10,6 +10,7 @@ use tokio::sync::watch;
 
 use super::{AgentClient, AgentHandlers, AgentProcess, AnswerOutcome};
 use crate::agent::protocol::DialogRequest;
+use crate::agent::protocol::ProducedFile;
 use crate::agent::protocol::Usage;
 use crate::log::{LogFields, Logger};
 
@@ -741,11 +742,17 @@ async fn tool_calls_report_their_target_and_whether_they_failed() {
                 },
             )),
             on_tool_end: Some(Box::new(
-                move |(id, _name, failed, output): (String, String, bool, String)| {
+                move |(id, _name, failed, output, files): (
+                    String,
+                    String,
+                    bool,
+                    String,
+                    Vec<ProducedFile>,
+                )| {
                     end_seen
                         .lock()
                         .unwrap()
-                        .push(format!("end:{id}:{failed}:{output}"));
+                        .push(format!("end:{id}:{failed}:{output}:{}", files.len()));
                 },
             )),
             ..AgentHandlers::default()
@@ -774,8 +781,47 @@ async fn tool_calls_report_their_target_and_whether_they_failed() {
         *seen.lock().unwrap(),
         vec![
             "start:t1:bash:ls -la".to_owned(),
-            "end:t1:true:no such file".to_owned(),
+            "end:t1:true:no such file:0".to_owned(),
         ]
+    );
+    setup.finish().await;
+}
+
+#[tokio::test]
+async fn a_generated_image_reaches_the_tool_end_handler() {
+    let seen: Arc<Mutex<Vec<ProducedFile>>> = Arc::new(Mutex::new(Vec::new()));
+    let end_seen = Arc::clone(&seen);
+    let setup = client(
+        AgentHandlers {
+            on_tool_end: Some(Box::new(
+                move |(_, _, _, _, files): (String, String, bool, String, Vec<ProducedFile>)| {
+                    end_seen.lock().unwrap().extend(files);
+                },
+            )),
+            ..AgentHandlers::default()
+        },
+        300_000,
+    );
+    setup.controls.send(&update(&json!({
+        "sessionUpdate": "tool_call_update",
+        "toolCallId": "t2", "status": "completed",
+        "content": [
+            { "type": "content", "content": { "type": "text", "text": "Saved generated/a.png" } },
+            { "type": "content", "content": {
+                "type": "resource_link", "uri": "file:///workspace/generated/a.png",
+                "name": "a.png", "mimeType": "image/png", "size": 24,
+            } },
+        ],
+    })));
+    settle().await;
+
+    let files = seen.lock().unwrap().clone();
+    assert_eq!(
+        files,
+        [ProducedFile {
+            uri: "file:///workspace/generated/a.png".to_owned(),
+            note: None,
+        }]
     );
     setup.finish().await;
 }
