@@ -10,7 +10,7 @@ use tokio::sync::watch;
 
 use super::{AgentClient, AgentHandlers, AgentProcess, AnswerOutcome, without_inline_images};
 use crate::agent::protocol::DialogRequest;
-use crate::agent::protocol::ProducedFile;
+use crate::agent::protocol::ProducedImage;
 use crate::agent::protocol::Usage;
 use crate::log::{LogFields, Logger};
 
@@ -742,17 +742,17 @@ async fn tool_calls_report_their_target_and_whether_they_failed() {
                 },
             )),
             on_tool_end: Some(Box::new(
-                move |(id, _name, failed, output, files): (
+                move |(id, _name, failed, output, images): (
                     String,
                     String,
                     bool,
                     String,
-                    Vec<ProducedFile>,
+                    Vec<ProducedImage>,
                 )| {
                     end_seen
                         .lock()
                         .unwrap()
-                        .push(format!("end:{id}:{failed}:{output}:{}", files.len()));
+                        .push(format!("end:{id}:{failed}:{output}:{}", images.len()));
                 },
             )),
             ..AgentHandlers::default()
@@ -788,16 +788,27 @@ async fn tool_calls_report_their_target_and_whether_they_failed() {
 }
 
 #[tokio::test]
-async fn a_generated_image_reaches_the_tool_end_handler() {
-    let seen: Arc<Mutex<Vec<ProducedFile>>> = Arc::new(Mutex::new(Vec::new()));
-    let end_seen = Arc::clone(&seen);
+async fn images_reach_the_tool_end_and_agent_image_handlers() {
+    let seen: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let (end_seen, reply_seen) = (Arc::clone(&seen), Arc::clone(&seen));
     let setup = client(
         AgentHandlers {
             on_tool_end: Some(Box::new(
-                move |(_, _, _, _, files): (String, String, bool, String, Vec<ProducedFile>)| {
-                    end_seen.lock().unwrap().extend(files);
+                move |(_, _, _, _, images): (String, String, bool, String, Vec<ProducedImage>)| {
+                    for image in images {
+                        end_seen
+                            .lock()
+                            .unwrap()
+                            .push(format!("tool:{}", image.bytes.len()));
+                    }
                 },
             )),
+            on_agent_image: Some(Box::new(move |image: ProducedImage| {
+                reply_seen
+                    .lock()
+                    .unwrap()
+                    .push(format!("reply:{}", image.bytes.len()));
+            })),
             ..AgentHandlers::default()
         },
         300_000,
@@ -806,23 +817,19 @@ async fn a_generated_image_reaches_the_tool_end_handler() {
         "sessionUpdate": "tool_call_update",
         "toolCallId": "t2", "status": "completed",
         "content": [
-            { "type": "content", "content": { "type": "text", "text": "Saved generated/a.png" } },
+            { "type": "content", "content": { "type": "text", "text": "Generated an image" } },
             { "type": "content", "content": {
-                "type": "resource_link", "uri": "file:///workspace/generated/a.png",
-                "name": "a.png", "mimeType": "image/png", "size": 24,
+                "type": "image", "data": "iVBORw0KGgo=", "mimeType": "image/png",
             } },
         ],
     })));
+    setup.controls.send(&update(&json!({
+        "sessionUpdate": "agent_message_chunk",
+        "content": { "type": "image", "data": "aGVsbG8=", "mimeType": "image/png" },
+    })));
     settle().await;
 
-    let files = seen.lock().unwrap().clone();
-    assert_eq!(
-        files,
-        [ProducedFile {
-            uri: "file:///workspace/generated/a.png".to_owned(),
-            note: None,
-        }]
-    );
+    assert_eq!(*seen.lock().unwrap(), ["tool:8", "reply:5"]);
     setup.finish().await;
 }
 

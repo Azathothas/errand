@@ -19,7 +19,7 @@ use tokio::sync::oneshot;
 
 use crate::agent::framing::LineFramer;
 use crate::agent::protocol::{
-    AcpUpdate, AgentRecord, DialogMethod, DialogRequest, FrameKind, ProducedFile,
+    AcpUpdate, AgentRecord, DialogMethod, DialogRequest, FrameKind, ProducedImage,
     StreamingBehavior, Usage, as_permission_ask, ask_option_ids, cancel_ask_frame, cancel_frame,
     classify_frame, classify_update, compact_frame, detail_of, image_block, initialize_frame,
     is_retryable, method_not_found_frame, new_session_frame, prompt_frame, resume_session_frame,
@@ -91,8 +91,10 @@ pub struct AgentHandlers {
     /// The agent began a tool call.
     pub on_tool_start: Callback<(String, String, Option<String>)>,
     /// A tool call finished, with whether it failed, what it said, and the
-    /// images it left in the project.
-    pub on_tool_end: Callback<(String, String, bool, String, Vec<ProducedFile>)>,
+    /// images it returned.
+    pub on_tool_end: Callback<(String, String, bool, String, Vec<ProducedImage>)>,
+    /// The model drew an image into its reply.
+    pub on_agent_image: Callback<ProducedImage>,
     /// The agent is thinking. Reported once per turn.
     pub on_thinking: Callback,
     /// What a finished turn cost, when the agent reported it.
@@ -1127,6 +1129,7 @@ impl Shared {
     fn apply_update(&self, update: AcpUpdate) {
         match update {
             AcpUpdate::AgentText(text) => self.apply_text(&text),
+            AcpUpdate::AgentImage(image) => self.apply_image(image),
             AcpUpdate::ThoughtText(text) => self.apply_thought(&text),
             AcpUpdate::ToolStart {
                 id,
@@ -1141,8 +1144,8 @@ impl Shared {
                 title,
                 failed,
                 output,
-                files,
-            } => self.apply_tool_end(id, title, failed, output, files),
+                images,
+            } => self.apply_tool_end(id, title, failed, output, images),
             AcpUpdate::UsageInfo { usage, size } => self.apply_usage(usage, size),
             AcpUpdate::TurnStart => self.apply_turn_start(),
             // An iteration boundary, not the end of the turn: the agent opens
@@ -1298,7 +1301,7 @@ impl Shared {
         title: Option<String>,
         failed: bool,
         output: String,
-        files: Vec<ProducedFile>,
+        images: Vec<ProducedImage>,
     ) {
         self.flush_speech();
         let held = {
@@ -1311,8 +1314,16 @@ impl Shared {
                 held.or(title).unwrap_or_else(|| "tool".to_owned()),
                 failed,
                 output,
-                files,
+                images,
             ));
+        }
+    }
+
+    /// Reports an image the model drew, after the words before it.
+    fn apply_image(&self, image: ProducedImage) {
+        self.flush_speech();
+        if let Some(on_agent_image) = &self.handlers.on_agent_image {
+            on_agent_image(image);
         }
     }
 

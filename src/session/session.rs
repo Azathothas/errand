@@ -23,7 +23,7 @@ use crate::agent::client::AnswerOutcome;
 use crate::agent::client::{AgentClient, AgentHandlers, AgentProcess};
 use crate::agent::delegate::{DelegationOutcome, TurnDelegations};
 use crate::agent::delegation::Sources;
-use crate::agent::protocol::{AgentImage, DialogRequest, ProducedFile, StreamingBehavior, Usage};
+use crate::agent::protocol::{AgentImage, DialogRequest, ProducedImage, StreamingBehavior, Usage};
 use crate::agent::requests::{
     DELEGATE_COMMAND, RECALL_COMMAND, delegate_command_contents, recall_command_contents,
 };
@@ -470,8 +470,9 @@ enum Signal {
         name: String,
         failed: bool,
         output: String,
-        files: Vec<ProducedFile>,
+        images: Vec<ProducedImage>,
     },
+    AgentImage(ProducedImage),
     Thinking,
     Thought(String),
     Usage(Usage),
@@ -897,9 +898,14 @@ impl Running {
                     name,
                     failed,
                     output,
-                    files,
+                    images,
                 } => {
-                    self.on_tool_end(&id, &name, failed, &output, &files).await;
+                    self.on_tool_end(&id, &name, failed, &output, &images).await;
+                }
+                Signal::AgentImage(image) => {
+                    if self.options.config.output.post_images {
+                        self.post_image(&image).await;
+                    }
                 }
                 Signal::Thought(text) => {
                     self.views.send(SessionEvent::Thinking { text }).await;
@@ -1735,17 +1741,18 @@ impl Running {
         });
         on!(
             on_tool_end,
-            (String, String, bool, String, Vec<ProducedFile>),
-            |(id, name, failed, output, files)| {
+            (String, String, bool, String, Vec<ProducedImage>),
+            |(id, name, failed, output, images)| {
                 Signal::ToolEnd {
                     id,
                     name,
                     failed,
                     output,
-                    files,
+                    images,
                 }
             }
         );
+        on!(on_agent_image, ProducedImage, Signal::AgentImage);
         on!(on_thought, String, Signal::Thought);
         on!(on_usage, Usage, Signal::Usage);
         on!(on_error, String, Signal::Error);
@@ -1907,14 +1914,14 @@ impl Running {
         name: &str,
         failed: bool,
         output: &str,
-        files: &[ProducedFile],
+        images: &[ProducedImage],
     ) {
         if !failed && EDITING_TOOLS.contains(&name) {
             self.report_edit(name, id).await;
         }
         if !failed && self.options.config.output.post_images {
-            for file in files {
-                self.post_image(file).await;
+            for image in images {
+                self.post_image(image).await;
             }
         }
 
