@@ -58,30 +58,6 @@ const KAGE_KNOWN: [&str; 20] = [
     "xiaomi-token-plan-sgp",
 ];
 
-/// The tools the agent ships with, allowed so it never asks about one.
-///
-/// Named one by one because the agent's rules are keyed by literal tool
-/// name and an unlisted tool falls back to asking. A tool it gains later
-/// asks again, which costs a stalled turn rather than a wrong permission, so
-/// the list is read from what this build registers rather than guessed at.
-///
-/// Plugin and MCP tools are not here: they are covered by the wildcard
-/// under `permissions.mcp`, since their names carry a server prefix this
-/// list cannot know.
-const TOOLS_ALLOWED: [&str; 11] = [
-    "edit",
-    "find",
-    "generate_image",
-    "grep",
-    "ls",
-    "read",
-    "shell",
-    "todo_list",
-    "web_fetch",
-    "web_search",
-    "write",
-];
-
 /// A TOML basic string: backslashes, quotes, and line breaks escaped.
 fn toml_string(value: &str) -> String {
     let mut out = String::with_capacity(value.len() + 2);
@@ -429,42 +405,21 @@ fn plugin_capabilities(plugins: &[PluginConfig]) -> String {
     out
 }
 
-/// Every tool allowed, and what may not be used anyway.
+/// What the operator refuses, refused by the agent itself.
 ///
-/// The agent asks before running a tool, and sets its fallback to asking for
-/// every one of them. A thread cannot answer: the ask arrives as a request
-/// the agent blocks on, and nobody is watching a chat channel for it, so the
-/// session waits out its dialog timer and reports a question that was never
-/// really put to anybody. Allowing each tool by name is what stops that, and
-/// it stops it in the agent rather than by answering for it here.
-///
-/// MCP tools are covered by the wildcard, since errand starts no servers of
-/// its own but a plugin may bring some. The agent's own refusals are left
-/// intact: this only decides what may run without asking.
+/// The agent runs with `--yolo`, so every tool runs without asking: a thread
+/// cannot serve a permission prompt, and an ask nobody sees is a session that
+/// waits out its dialog timer. A configured deny still refuses under it, so
+/// only the operator's refusals are written.
 fn permissions_section(denied: &Denials) -> String {
-    let mut out = String::from(
-        "\n# Every tool runs without asking: the thread cannot serve a permission\n\
-         # prompt, and an ask nobody sees is a session that waits. What the\n\
-         # operator refuses below is refused by the agent itself.\n",
-    );
-    let _ = writeln!(out, "\n[permissions.mcp]");
-    let _ = writeln!(out, "\"*\" = \"allow\"");
-    // One table per tool. A tool named twice is a TOML parse error, which
-    // ends the launch, so a tool is written once and decided there. A tool
-    // the operator refuses outright takes no denied commands: it runs
-    // nothing either way, so the patterns would say nothing.
+    let mut out = String::new();
     let denied_tool = |tool: &str| denied.tools.iter().any(|denied| denied == tool);
-    for tool in TOOLS_ALLOWED.iter().filter(|tool| !denied_tool(tool)) {
-        let _ = writeln!(out, "\n[permissions.tools.{}]", toml_key(tool));
-        let _ = writeln!(out, "default = \"allow\"");
-        if tool == &"shell" {
-            // A list, which the schema requires: `deny` and `allow` take
-            // one entry each. A bare string here is a parse error, which
-            // ends the launch rather than the command.
-            for pattern in &denied.commands {
-                let _ = writeln!(out, "deny = [{}]", toml_string(pattern));
-            }
-        }
+    // A tool refused outright takes no denied commands: it runs nothing
+    // either way, and a second table for it is a TOML parse error.
+    if !denied.commands.is_empty() && !denied_tool("shell") {
+        let patterns: Vec<String> = denied.commands.iter().map(|c| toml_string(c)).collect();
+        let _ = writeln!(out, "\n[permissions.tools.shell]");
+        let _ = writeln!(out, "deny = [{}]", patterns.join(", "));
     }
     for tool in &denied.tools {
         let _ = writeln!(out, "\n[permissions.tools.{}]", toml_key(tool));

@@ -547,7 +547,7 @@ fn no_tool_is_written_twice_whatever_the_operator_denies() {
         .split("\n[")
         .next()
         .expect("its table");
-    assert!(shell.contains(r#"default = "allow""#), "{shell}");
+    assert!(!shell.contains("default"), "{shell}");
     assert!(shell.contains(r#"deny = ["rm -rf *"]"#), "{shell}");
     for tool in ["web_search", "write"] {
         let denied_tool = config
@@ -592,9 +592,10 @@ fn denying_the_shell_tool_takes_no_command_patterns_with_it() {
     );
 }
 
-/// Every tool the agent ships with is allowed, so nothing asks by default.
+/// Under `--yolo` nothing needs allowing, so without denials no permission
+/// is written, and several denied commands share one list.
 #[test]
-fn every_builtin_tool_is_allowed_by_default() {
+fn only_denials_are_written() {
     let config = kage_config(
         &serde_json::Map::new(),
         &BTreeMap::new(),
@@ -603,15 +604,22 @@ fn every_builtin_tool_is_allowed_by_default() {
         &[],
         &Denials::default(),
     );
+    assert!(!config.contains("[permissions"), "{config}");
 
-    for tool in super::TOOLS_ALLOWED {
-        assert!(
-            config.contains(&format!("[permissions.tools.{tool}]\ndefault = \"allow\"")),
-            "{tool} is not allowed:\n{config}"
-        );
-    }
+    let denied = Denials {
+        commands: vec!["rm -rf *".to_owned(), "git push*".to_owned()],
+        tools: Vec::new(),
+    };
+    let config = kage_config(
+        &serde_json::Map::new(),
+        &BTreeMap::new(),
+        &BTreeMap::new(),
+        &BTreeMap::new(),
+        &[],
+        &denied,
+    );
     assert!(
-        config.contains("[permissions.mcp]\n\"*\" = \"allow\""),
+        config.contains("[permissions.tools.shell]\ndeny = [\"rm -rf *\", \"git push*\"]\n"),
         "{config}"
     );
 }
@@ -696,7 +704,7 @@ fn an_unbrokered_images_provider_points_the_tool_at_its_endpoint() {
             "\n[tools.generate_image]\n\
              base_url = \"https://images.example/v1\"\n\
              api_key_env = \"PICTURES_KEY\"\n\
-             model = \"image\"\n\n"
+             model = \"image\"\n"
         ),
         "{config}"
     );

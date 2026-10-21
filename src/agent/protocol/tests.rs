@@ -374,15 +374,12 @@ fn only_a_bad_stop_reason_fails_the_turn() {
     assert_eq!(stop_failure(&json!({})), None);
 }
 
-/// The handshake asks for unattended runs: a tool with no permission
-/// rule runs, since a chat thread cannot answer the ask.
+/// The handshake asks for nothing of its own: `--yolo` is what keeps an
+/// unattended session from asking.
 #[test]
-fn the_handshake_declares_unattended_tool_permissions() {
+fn the_handshake_speaks_protocol_one() {
     let frame = super::initialize_frame(7);
     assert_eq!(frame["id"], 7);
     assert_eq!(frame["params"]["protocolVersion"], 1);
-    assert_eq!(
-        frame["params"]["clientCapabilities"]["_meta"]["kage"]["unconfiguredTools"],
-        "allow"
-    );
+    assert_eq!(frame["params"]["clientCapabilities"], json!({}));
 }
