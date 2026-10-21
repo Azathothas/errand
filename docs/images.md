@@ -2,8 +2,7 @@
 
 A provider whose endpoint answers the OpenAI Images API
 (`POST /images/generations`) can give sessions an image tool. Mark it with
-`images`, naming the model a call asks for when it names none and, if the agent
-may choose, the models it may choose from:
+`images`, naming the model every call asks for:
 
 ```json
 {
@@ -13,7 +12,7 @@ may choose, the models it may choose from:
         "baseUrl": "https://gateway.example/v1",
         "credential": "...",
         "models": [{ "id": "chat-model" }],
-        "images": { "model": "image-small", "models": ["image-small", "image-large"] }
+        "images": { "model": "image-small" }
       }
     }
   }
@@ -43,7 +42,7 @@ Only one provider may carry `images`. An `anthropic` provider cannot, since that
 API has no images endpoint, and neither can kage's own `openai-responses`
 provider, or one a plugin registers.
 
-The tool needs a kage that has it. An older kage ignores the setting, and its
+The tool needs kage 0.5.0 or later. An older kage ignores the setting, and its
 sessions run without the tool.
 
 ## In the thread

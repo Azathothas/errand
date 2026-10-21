@@ -342,7 +342,7 @@ pub fn kage_config(
             );
         }
     }
-    out.push_str(&image_generation(
+    out.push_str(&generate_image(
         defined,
         &written,
         &endpoints,
@@ -353,7 +353,7 @@ pub fn kage_config(
     out
 }
 
-/// The `[tools.image_generation]` table, for the provider whose definition
+/// The `[tools.generate_image]` table, for the provider whose definition
 /// carries `images`, or nothing when none does.
 ///
 /// A provider the agent is already told about is named, and lends the tool
@@ -363,7 +363,7 @@ pub fn kage_config(
 /// offered for chat: it is named by its endpoint and the variable its key is
 /// read from instead, which under the broker are the broker's address and the
 /// nonce. One with neither is left out, and the session runs without the tool.
-fn image_generation(
+fn generate_image(
     defined: &Map<String, Value>,
     written: &[&str],
     endpoints: &BTreeMap<&str, String>,
@@ -384,7 +384,7 @@ fn image_generation(
     else {
         return String::new();
     };
-    let mut out = String::from("\n[tools.image_generation]\n");
+    let mut out = String::from("\n[tools.generate_image]\n");
     if written.contains(&name.as_str()) {
         let _ = writeln!(out, "provider = {}", toml_string(name));
     } else if let Some(url) = endpoints.get(name.as_str()) {
@@ -396,19 +396,6 @@ fn image_generation(
         return String::new();
     }
     let _ = writeln!(out, "model = {}", toml_string(model));
-    let models: Vec<String> = images
-        .get("models")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(Value::as_str)
-        .map(str::trim)
-        .filter(|model| !model.is_empty())
-        .map(toml_string)
-        .collect();
-    if !models.is_empty() {
-        let _ = writeln!(out, "models = [{}]", models.join(", "));
-    }
     out
 }
 

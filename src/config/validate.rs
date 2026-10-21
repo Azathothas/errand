@@ -618,7 +618,7 @@ const NO_IMAGES_ENDPOINT: [&str; 2] = ["anthropic", "openai-responses"];
 
 /// Reads what generating images through one provider needs, which errand
 /// translates into the agent's own configuration: an object naming the model
-/// a call asks for when it names none, and the models a call may choose from.
+/// every call asks for.
 ///
 /// The endpoint must speak the `OpenAI` Images API, which an `anthropic` kind
 /// and the providers in [`NO_IMAGES_ENDPOINT`] do not, and errand must be able
@@ -629,23 +629,11 @@ fn validate_images(name: &str, definition: &Value, problems: &mut Problems) {
     };
     let place = format!("agent.providers.{name}.images");
     let Some(fields) = images.as_object() else {
-        problems.add(format!(
-            "{place} must be an object naming a model, and optionally models"
-        ));
+        problems.add(format!("{place} must be an object naming a model"));
         return;
     };
-    reject_unknown(fields, &["model", "models"], &place, problems);
+    reject_unknown(fields, &["model"], &place, problems);
     let _ = required_string(fields, "model", &place, problems);
-    if let Some(models) = fields.get("models") {
-        let named = models.as_array().is_some_and(|models| {
-            models
-                .iter()
-                .all(|model| model.as_str().is_some_and(|model| !model.trim().is_empty()))
-        });
-        if !named {
-            problems.add(format!("{place}.models must be a list of model names"));
-        }
-    }
     if definition.get("extension").and_then(Value::as_bool) == Some(true) {
         problems.add(format!(
             "{place} needs an endpoint errand writes for the agent, and a provider a plugin \

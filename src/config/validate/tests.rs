@@ -744,7 +744,7 @@ fn a_provider_may_carry_images_for_the_agent_to_generate_through() {
         "pictures": {
             "credential": "k2",
             "baseUrl": "https://images.example/v1",
-            "images": { "model": "image", "models": ["image", "image:max"] },
+            "images": { "model": "image" },
         },
     })))
     .expect("resolves");
@@ -759,14 +759,14 @@ fn a_provider_may_carry_images_for_the_agent_to_generate_through() {
 fn images_name_a_model_and_only_what_errand_reads() {
     let problems = problems_of(&with_providers(&json!({
         "chat": { "credential": "k", "baseUrl": "https://chat.example/v1", "models": [{ "id": "m" }] },
-        "a": { "credential": "k", "baseUrl": "https://a.example/v1", "images": { "models": ["x", 3], "modle": "y" } },
+        "a": { "credential": "k", "baseUrl": "https://a.example/v1", "images": { "models": ["x"], "modle": "y" } },
         "b": { "credential": "k", "baseUrl": "https://b.example/v1", "images": "image" },
     })))
     .join("\n");
 
     for wanted in [
         "agent.providers.a.images.model is required and must be a non-empty string",
-        "agent.providers.a.images.models must be a list of model names",
+        "agent.providers.a.images.models is not a setting",
         "agent.providers.a.images.modle is not a setting",
         "agent.providers.b.images must be an object naming a model",
         "only one provider may carry images, and a, b do",

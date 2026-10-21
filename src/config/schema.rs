@@ -187,13 +187,13 @@ pub struct AgentConfig {
     /// model alone. Naming a model the host's store already lists says it for
     /// that model without listing it twice.
     ///
-    /// An `images` object on one provider, naming a `model` and optionally
-    /// `models`, gives sessions kage's `generate_image` tool through it, for
-    /// an endpoint that answers `POST /images/generations`. A provider the
-    /// agent already reaches for chat lends the tool its endpoint and key. One
-    /// kage does not know that lists no models is an images endpoint of its
-    /// own, written for the tool alone so its image models are never offered
-    /// as chat models, and it needs a `baseUrl`.
+    /// An `images` object on one provider, naming a `model`, gives sessions
+    /// kage's `generate_image` tool through it, for an endpoint that answers
+    /// `POST /images/generations`. A provider the agent already reaches for
+    /// chat lends the tool its endpoint and key. One kage does not know that
+    /// lists no models is an images endpoint of its own, written for the tool
+    /// alone so its image models are never offered as chat models, and it
+    /// needs a `baseUrl`.
     ///
     /// A provider entry may instead be marked `extension: true`, which means
     /// a kage plugin registers it. Errand writes nothing for it into the
