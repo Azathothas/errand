@@ -45,6 +45,26 @@ provider, or one a plugin registers.
 The tool needs kage 0.5.0 or later. An older kage ignores the setting, and its
 sessions run without the tool.
 
+## An image model as the session's model
+
+An image provider's models can also be chosen with `!model` or `-m`, so a
+message goes straight to the image model, with no chat model in between. List
+them under `models` with `produces`, and each message makes one picture:
+
+```json
+"pictures": {
+  "baseUrl": "https://images.example/v1",
+  "credential": "...",
+  "models": [{ "id": "image-large", "input": ["text"], "produces": ["text", "image"] }],
+  "images": { "model": "image-small" }
+}
+```
+
+Such a model reads only the latest message, has no tools, and remembers
+nothing of earlier turns. Some gateways answer with a link to the picture
+rather than the picture: kage fetches it when the link is on the provider's
+own host, which needs a kage newer than 0.5.0.
+
 ## In the thread
 
 The agent calls kage's `generate_image` tool, and kage hands the picture back

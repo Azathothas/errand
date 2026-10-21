@@ -104,9 +104,9 @@ fn provider_kind(definition: Option<&Map<String, Value>>) -> &str {
         .unwrap_or(CUSTOM_PROVIDER_KIND)
 }
 
-/// The input kinds kage knows a model can take, as the store and the
-/// configuration name them.
-const KAGE_INPUTS: [&str; 5] = ["text", "image", "pdf", "audio", "video"];
+/// The kinds of media kage knows a model can take or produce, as the store
+/// and the configuration name them.
+const KAGE_MODALITIES: [&str; 5] = ["text", "image", "pdf", "audio", "video"];
 
 /// The thinking levels kage offers a model, as the configuration names them.
 const KAGE_EFFORTS: [&str; 7] = ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
@@ -114,9 +114,11 @@ const KAGE_EFFORTS: [&str; 7] = ["none", "minimal", "low", "medium", "high", "xh
 /// One `[[models]]` entry from a store model, naming what kage needs to
 /// address it. Only the id is required; the name falls back to it and the
 /// context passes through when the store said it. The output limit, the
-/// inputs, and the thinking levels pass through too, in kage's own words:
-/// a model whose window was set without its output limit compacts at the
-/// wrong size, and one without its inputs never receives an image.
+/// inputs, what it produces, and the thinking levels pass through too, in
+/// kage's own words: a model whose window was set without its output limit
+/// compacts at the wrong size, one without its inputs never receives an
+/// image, and one that draws without `produces` never hands its pictures
+/// over.
 ///
 /// Anything kage does not know is left out rather than guessed at. A level it
 /// never heard of would fail the whole configuration file, which would cost
@@ -144,8 +146,11 @@ fn kage_model(entry: &Value) -> Option<String> {
     if let Some(max_output) = max_output {
         let _ = write!(table, "\nmax_output = {max_output}");
     }
-    if let Some(inputs) = model_inputs(entry) {
+    if let Some(inputs) = model_modalities(entry, "input") {
         let _ = write!(table, "\ninput = [{inputs}]");
+    }
+    if let Some(produces) = model_modalities(entry, "produces") {
+        let _ = write!(table, "\nproduces = [{produces}]");
     }
     if let Some(reasoning) = model_reasoning(entry) {
         let _ = write!(table, "\nreasoning = {reasoning}");
@@ -156,14 +161,15 @@ fn kage_model(entry: &Value) -> Option<String> {
     Some(table)
 }
 
-/// The input kinds a model entry claims, as a TOML list, or nothing when it
-/// names none kage knows. Unknown kinds are dropped one by one: a gateway
-/// inventing a new one must not cost the model its images.
-fn model_inputs(entry: &Value) -> Option<String> {
-    let kinds = entry.get("input")?.as_array()?;
+/// The kinds of media a model entry claims under `field`, `input` or
+/// `produces`, as a TOML list, or nothing when it names none kage knows.
+/// Unknown kinds are dropped one by one: a gateway inventing a new one must
+/// not cost the model its images.
+fn model_modalities(entry: &Value, field: &str) -> Option<String> {
+    let kinds = entry.get(field)?.as_array()?;
     let mut known: Vec<&str> = Vec::new();
     for kind in kinds.iter().filter_map(Value::as_str) {
-        if KAGE_INPUTS.contains(&kind) && !known.contains(&kind) {
+        if KAGE_MODALITIES.contains(&kind) && !known.contains(&kind) {
             known.push(kind);
         }
     }

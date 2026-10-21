@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use serde_json::json;
 
-use super::{BrokeredProvider, kage_config, write_agent_config};
+use super::{BrokeredProvider, kage_config, kage_model, write_agent_config};
 use crate::config::schema::PluginConfig;
 use crate::sandbox::backend::{Denials, SandboxLaunch};
 
@@ -182,6 +182,27 @@ fn a_model_entry_carries_its_sizes_inputs_and_levels() {
 
 /// A model entry naming no sizes, inputs, or levels is written with the id
 /// and the name alone: kage then decides what the model can do.
+/// A model that draws says so, so the agent hands its pictures over; only
+/// the kinds kage knows are written.
+#[test]
+fn a_model_entry_says_what_it_produces() {
+    let table = kage_model(&json!({
+        "id": "image:max",
+        "input": ["text"],
+        "produces": ["text", "image", "hologram"],
+    }))
+    .unwrap();
+    assert!(
+        table.contains("\nproduces = [\"text\", \"image\"]"),
+        "{table}"
+    );
+    assert!(
+        !kage_model(&json!({ "id": "m" }))
+            .unwrap()
+            .contains("produces")
+    );
+}
+
 #[test]
 fn a_bare_model_entry_writes_no_sizes_inputs_or_levels() {
     let mut defined = serde_json::Map::new();
